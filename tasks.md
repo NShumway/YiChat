@@ -28,7 +28,7 @@ npx expo install expo-router react-native-safe-area-context react-native-screens
 
 ---
 
-### US-0.2: Install and Configure Firebase
+### US-0.2: Install and Configure Firebase ✅ COMPLETED
 **As a** developer  
 **I want** to set up Firebase for auth, Firestore, and storage  
 **So that** I have backend infrastructure ready
