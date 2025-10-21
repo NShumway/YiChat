@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isChatParticipant(chatId) {
+      return isAuthenticated() && 
+        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+    
+    // Users: Can read any user, can only write own profile
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+    
+    // Chats: Can only read/write chats where user is participant
+    match /chats/{chatId} {
+      allow read: if isChatParticipant(chatId);
+      allow create: if isAuthenticated() && 
+        request.auth.uid in request.resource.data.participants;
+      allow update: if isChatParticipant(chatId);
+    }
+    
+    // Messages: Can only read messages in chats you're in
+    // Can only create messages where you're the sender
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && 
+        isChatParticipant(resource.data.chatId);
+      
+      allow create: if isAuthenticated() && 
+        request.auth.uid == request.resource.data.senderId &&
+        isChatParticipant(request.resource.data.chatId);
+      
+      // Allow updates for read receipts
+      allow update: if isAuthenticated() && 
+        isChatParticipant(resource.data.chatId);
+    }
+    
+    // Typing indicators: Can only write your own, read for chats you're in
+    match /typing/{typingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid;
+    }
+  }
+}
+

@@ -29,6 +29,7 @@ dist-ssr
 
 # Firebase
 .firebase/
+.firebaserc
 
 # Debug files
 debug_*.js
