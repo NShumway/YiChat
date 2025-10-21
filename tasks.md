@@ -82,7 +82,7 @@ export const storage = getStorage(app);
 
 ---
 
-### US-0.3: Set Up SQLite for Local Storage
+### US-0.3: Set Up SQLite for Local Storage ✅ COMPLETED
 **As a** developer  
 **I want** to configure Expo SQLite  
 **So that** I can persist messages locally

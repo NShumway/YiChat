@@ -31,7 +31,8 @@ module.exports = {
       favicon: "./assets/favicon.png"
     },
     plugins: [
-      "expo-router"
+      "expo-router",
+      "expo-sqlite"
     ],
     extra: {
       firebaseApiKey: process.env.FIREBASE_API_KEY,
