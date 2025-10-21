@@ -35,8 +35,10 @@ YiChat is a messaging app designed for people communicating across language barr
 - **WebSocket Connection:** Firebase Firestore real-time listeners
 - **Optimistic UI:** Messages appear instantly, update on server confirmation
 - **Message States:** Sending → Sent → Delivered → Read
-- **Typing Indicators:** Debounced, 10s timeout
+- **Typing Indicators:** Throttled (2s max), disabled in groups >10 users
 - **Online/Offline Presence:** Real-time status updates
+- **Battery Optimization:** Listeners detach after 5 min in background
+- **App Lifecycle Handling:** Clean reconnection on foreground/background transitions
 
 ### Offline Support & Persistence
 - **Local-First Architecture:** Expo SQLite as source of truth
@@ -44,6 +46,8 @@ YiChat is a messaging app designed for people communicating across language barr
 - **Delta Sync:** Only fetch messages since `lastSeenAt` timestamp
 - **Connection States:** Online, Offline, Reconnecting (with UI indicators)
 - **Sub-1s Sync:** After reconnection, immediate delta fetch
+- **Exponential Backoff:** 1s, 2s, 5s, 10s, 30s retry delays for failed sends
+- **Network Resilience:** Works on 3G with long polling, handles packet loss gracefully
 
 ### Group Chat (3+ Users)
 - **Message Attribution:** Name, avatar, language indicator per message
@@ -154,8 +158,7 @@ YiChat is a messaging app designed for people communicating across language barr
 ├── Expo SQLite (local message storage)
 ├── Firebase SDK (auth, Firestore real-time)
 ├── Expo Notifications (push)
-├── React Query (async state management)
-└── Zustand (global state: user, connection status)
+└── Zustand (global state: user, connection status, async state)
 ```
 
 ### Backend (Firebase)
@@ -164,8 +167,15 @@ YiChat is a messaging app designed for people communicating across language barr
 ├── Cloud Functions (AI calls, translation)
 ├── Firebase Auth (email/password + optional social)
 ├── Firebase Cloud Messaging (push notifications)
-└── Firebase Storage (profile pictures, media)
+├── Firebase Storage (profile pictures, media)
+└── Firestore Security Rules (protect data, prevent direct AI API access)
 ```
+
+**Security Architecture:**
+- All AI API keys stored in Cloud Functions config (never in client)
+- Firebase config in app is public (by design, protected by Security Rules)
+- Security Rules enforce: users can only read chats they're participants in
+- Message writes validated: senderId must match authenticated user
 
 ### AI Stack
 ```
@@ -207,10 +217,13 @@ YiChat is a messaging app designed for people communicating across language barr
   culturalContext?: string, // Optional hint
   timestamp: timestamp,
   status: 'sending' | 'sent' | 'delivered' | 'read',
-  readBy: string[], // Array of user IDs
+  readBy: { [userId: string]: timestamp }, // Map for scalable group chats
+  deliveredTo: { [userId: string]: timestamp }, // Separate delivery tracking
   mediaURL?: string
 }
 ```
+
+**Note:** `readBy` uses a map structure instead of array for scalability. In group chats with 50+ users, array operations become expensive and cause write conflicts. Map structure allows atomic per-user updates.
 
 **Chats Collection:**
 ```javascript
@@ -258,20 +271,25 @@ YiChat is a messaging app designed for people communicating across language barr
 
 ## Performance Targets
 
-| Metric | Target |
-|--------|--------|
-| Message delivery | <200ms |
-| App launch to chat screen | <2s |
-| Scroll 1000+ messages | 60 FPS |
-| Offline sync after reconnect | <1s |
-| Translation (short message) | <500ms |
-| Smart reply generation | <3s |
-| Image load (progressive) | <1s first pixel |
+| Metric | Target | Architecture Requirement |
+|--------|--------|-------------------------|
+| Message delivery | <200ms | WebSocket with optimistic UI |
+| App launch to chat screen | <2s | SQLite cache, lazy loading |
+| Scroll 1000+ messages | 60 FPS | FlashList with memoization |
+| Offline sync after reconnect | <1s | Delta sync with lastSyncTimestamp |
+| Translation (short message) | <500ms | Cloud Functions with caching |
+| Smart reply generation | <3s | Streaming responses, preload context |
+| Image load (progressive) | <1s first pixel | Progressive JPEG, CDN caching |
+| Battery drain (background) | <2% per hour | Detach listeners after 5 min |
+| Network resilience | Works on 3G (100kbps) | Exponential backoff, compression |
+| Group read receipts (50 users) | <1s update | Map structure, not array |
+| Sync after 1-hour offline | <2s for 100 messages | Parallel delta queries |
 
 ---
 
 ## MVP Checklist (24 Hours)
 
+### Core Messaging Features
 - [ ] User authentication (Firebase Auth)
 - [ ] One-on-one chat with real-time delivery
 - [ ] Message persistence (SQLite)
@@ -281,6 +299,15 @@ YiChat is a messaging app designed for people communicating across language barr
 - [ ] Basic group chat (3+ users)
 - [ ] Push notifications (foreground working)
 - [ ] Local emulator deployment
+
+### Architecture Foundations (For Future Scale)
+- [ ] Battery-efficient listener management (detach in background)
+- [ ] Exponential backoff for failed requests
+- [ ] Firestore security rules deployed
+- [ ] Delta sync with lastSyncTimestamp tracking
+- [ ] Scalable read receipt data model (map, not array)
+- [ ] Typing indicator throttling (2s max)
+- [ ] Connection state management with retry logic
 
 **AI Not Required for MVP** - Focus on messaging infrastructure first
 
