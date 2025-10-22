@@ -100,17 +100,29 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading) return;
 
+    console.log('🧭 Current segments:', segments);
+    console.log('🔐 Is authenticated:', isAuthenticated);
+
     const inAuthGroup = segments[0] === '(auth)';
     const inTabsGroup = segments[0] === '(tabs)';
+    const inModalOrChat = segments[0] === 'new-chat' || segments[0] === 'chat';
+
+    console.log('📍 Route check:', { inAuthGroup, inTabsGroup, inModalOrChat });
 
     if (!isAuthenticated && !inAuthGroup) {
       // Redirect to login if not authenticated
-      console.log('Redirecting to login (not authenticated)');
+      console.log('➡️ Redirecting to login (not authenticated)');
       router.replace('/(auth)/login');
-    } else if (isAuthenticated && (inAuthGroup || !inTabsGroup)) {
-      // Redirect to main app if already authenticated and not in tabs
-      console.log('Redirecting to tabs (authenticated)');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Redirect to main app if already authenticated but in auth screens
+      console.log('➡️ Redirecting to tabs (authenticated, in auth)');
       router.replace('/(tabs)');
+    } else if (isAuthenticated && !inTabsGroup && !inModalOrChat && segments[0] !== undefined) {
+      // Only redirect to tabs if not in a valid authenticated screen
+      console.log('➡️ Redirecting to tabs (authenticated, unknown route)');
+      router.replace('/(tabs)');
+    } else {
+      console.log('✅ Staying on current route');
     }
   }, [isAuthenticated, segments, isLoading]);
 
@@ -130,6 +142,19 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen 
+          name="new-chat" 
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen 
+          name="chat/[chatId]" 
+          options={{
+            headerShown: false,
+          }}
+        />
       </Stack>
     </>
   );

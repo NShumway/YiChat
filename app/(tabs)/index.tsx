@@ -1,13 +1,62 @@
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { signOut } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { auth, db } from '../../services/firebase';
 import { useStore } from '../../store/useStore';
+import { Chat } from '../../types/Message';
+import { ChatListItem } from '../../components/ChatListItem';
 
 export default function ChatsScreen() {
   const router = useRouter();
   const { user, logout, connectionStatus } = useStore();
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Real-time listener for user's chats
+  useEffect(() => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('🔥 Setting up real-time chat listener for user:', user.uid);
+
+    const q = query(
+      collection(db, 'chats'),
+      where('participants', 'array-contains', user.uid),
+      orderBy('lastMessageTimestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        console.log(`📬 Received ${snapshot.docs.length} chats from Firestore`);
+        const chatData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Chat[];
+        setChats(chatData);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error fetching chats:', error);
+        Alert.alert('Error', 'Failed to load chats. Please check your connection.');
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      console.log('🔥 Cleaning up chat listener');
+      unsubscribe();
+    };
+  }, [user]);
+
+  const handleNewChat = () => {
+    console.log('🚀 Navigating to new-chat');
+    router.push('/new-chat' as any);
+  };
 
   const handleLogout = async () => {
     Alert.alert(
@@ -88,28 +137,42 @@ export default function ChatsScreen() {
 
       {/* Main Content */}
       <View style={styles.content}>
-        <Text style={styles.title}>Welcome to YiChat! 🌍</Text>
-        <Text style={styles.subtitle}>
-          Your multilingual messaging app
-        </Text>
-        
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>💬</Text>
-          <Text style={styles.emptyText}>No chats yet</Text>
-          <Text style={styles.emptySubtext}>
-            Start a conversation to see your chats here
-          </Text>
-        </View>
-
-        <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>✅ Phase 1 Complete!</Text>
-          <Text style={styles.infoText}>
-            • User authentication{'\n'}
-            • Firebase & SQLite setup{'\n'}
-            • Auth state persistence{'\n'}
-            • Secure logout
-          </Text>
-        </View>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text style={styles.loadingText}>Loading chats...</Text>
+          </View>
+        ) : chats.length === 0 ? (
+          <View style={styles.emptyStateContainer}>
+            <Text style={styles.emptyIcon}>💬</Text>
+            <Text style={styles.emptyText}>No chats yet</Text>
+            <Text style={styles.emptySubtext}>
+              Tap the + button to start a conversation
+            </Text>
+            <TouchableOpacity
+              style={styles.newChatButton}
+              onPress={handleNewChat}
+            >
+              <Text style={styles.newChatButtonText}>Start New Chat</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <FlatList
+              data={chats}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <ChatListItem chat={item} />}
+              style={styles.chatList}
+              contentContainerStyle={styles.chatListContent}
+            />
+            <TouchableOpacity
+              style={styles.fab}
+              onPress={handleNewChat}
+            >
+              <Text style={styles.fabText}>+</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Logout Button */}
@@ -189,26 +252,22 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
-    alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
+  loadingText: {
+    marginTop: 12,
     fontSize: 16,
     color: '#666',
-    marginBottom: 40,
-    textAlign: 'center',
   },
-  emptyState: {
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 40,
+    padding: 40,
   },
   emptyIcon: {
     fontSize: 64,
@@ -224,24 +283,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+    marginBottom: 24,
   },
-  infoBox: {
-    backgroundColor: '#E8F5E9',
-    padding: 20,
-    borderRadius: 12,
-    width: '100%',
-    maxWidth: 400,
+  newChatButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
-  infoTitle: {
+  newChatButtonText: {
+    color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 8,
+    fontWeight: '600',
   },
-  infoText: {
-    fontSize: 14,
-    color: '#2E7D32',
-    lineHeight: 22,
+  chatList: {
+    flex: 1,
+  },
+  chatListContent: {
+    flexGrow: 1,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  fabText: {
+    fontSize: 32,
+    color: '#fff',
+    fontWeight: '300',
+    marginTop: -2,
   },
   logoutButton: {
     margin: 20,

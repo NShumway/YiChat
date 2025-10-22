@@ -1,0 +1,190 @@
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import { Chat } from '../types/Message';
+import { useStore } from '../store/useStore';
+
+interface ChatListItemProps {
+  chat: Chat;
+}
+
+export function ChatListItem({ chat }: ChatListItemProps) {
+  const router = useRouter();
+  const currentUser = useStore((state) => state.user);
+  const [otherUserName, setOtherUserName] = useState<string>('Loading...');
+
+  // Fetch the other participant's details
+  useEffect(() => {
+    const fetchOtherUser = async () => {
+      const otherParticipantId = chat.participants.find(p => p !== currentUser?.uid);
+      if (!otherParticipantId) {
+        setOtherUserName('Unknown');
+        return;
+      }
+
+      try {
+        const userDoc = await getDoc(doc(db, 'users', otherParticipantId));
+        if (userDoc.exists()) {
+          setOtherUserName(userDoc.data().displayName || 'Unknown User');
+        } else {
+          setOtherUserName(`User ${otherParticipantId.slice(0, 8)}`);
+        }
+      } catch (error) {
+        console.error('Error fetching user details:', error);
+        setOtherUserName(`User ${otherParticipantId.slice(0, 8)}`);
+      }
+    };
+
+    fetchOtherUser();
+  }, [chat.participants, currentUser?.uid]);
+
+  const formatTimestamp = (timestamp?: number) => {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    
+    if (diffInHours < 1) {
+      const minutes = Math.floor(diffInHours * 60);
+      return `${minutes}m ago`;
+    } else if (diffInHours < 24) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffInHours < 48) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  };
+
+  const handlePress = () => {
+    router.push(`/chat/${chat.id}` as any);
+  };
+
+  const unreadCount = currentUser ? (chat.unreadCount[currentUser.uid] || 0) : 0;
+  const hasUnread = unreadCount > 0;
+
+  return (
+    <TouchableOpacity
+      style={styles.container}
+      onPress={handlePress}
+      activeOpacity={0.7}
+    >
+      {/* Avatar */}
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>
+          {otherUserName[0].toUpperCase()}
+        </Text>
+      </View>
+
+      {/* Chat Info */}
+      <View style={styles.contentContainer}>
+        <View style={styles.headerRow}>
+          <Text style={[styles.name, hasUnread && styles.nameUnread]}>
+            {otherUserName}
+          </Text>
+          <Text style={[styles.timestamp, hasUnread && styles.timestampUnread]}>
+            {formatTimestamp(chat.lastMessageTimestamp)}
+          </Text>
+        </View>
+
+        <View style={styles.messageRow}>
+          <Text 
+            style={[styles.lastMessage, hasUnread && styles.lastMessageUnread]}
+            numberOfLines={1}
+          >
+            {chat.lastMessage || 'No messages yet'}
+          </Text>
+          {hasUnread && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadText}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  contentContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  name: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    flex: 1,
+  },
+  nameUnread: {
+    fontWeight: '700',
+  },
+  timestamp: {
+    fontSize: 13,
+    color: '#999',
+  },
+  timestampUnread: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lastMessage: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  lastMessageUnread: {
+    color: '#1a1a1a',
+    fontWeight: '600',
+  },
+  unreadBadge: {
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    marginLeft: 8,
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+});
+
