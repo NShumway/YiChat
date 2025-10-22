@@ -5,5 +5,6 @@ export interface User {
   photoURL?: string;
   preferredLanguage: string;
   status?: 'online' | 'offline';
+  pushToken?: string;
 }
 

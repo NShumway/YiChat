@@ -1,18 +1,35 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import * as Notifications from 'expo-notifications';
 import { auth, db } from '../services/firebase';
 import { initDatabase } from '../services/database';
 import { useStore } from '../store/useStore';
+import { requestNotificationPermissions } from '../services/notifications';
+import { useMessageNotifications } from '../hooks/useMessageNotifications';
+
+// Set up notification handler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 export default function RootLayout() {
   const [isLoading, setIsLoading] = useState(true);
   const { setUser, isAuthenticated } = useStore();
   const segments = useSegments();
   const router = useRouter();
+  const notificationListener = useRef<Notifications.Subscription>();
+  const responseListener = useRef<Notifications.Subscription>();
+
+  // Hook to show notifications for new messages
+  useMessageNotifications();
 
   useEffect(() => {
     // Initialize SQLite database on app launch
@@ -56,8 +73,14 @@ export default function RootLayout() {
               preferredLanguage: userData.preferredLanguage,
               status: 'online',
               photoURL: userData.photoURL,
+              pushToken: userData.pushToken,
             });
             console.log('✅ User data loaded from Firestore');
+            
+            // Request notification permissions
+            requestNotificationPermissions(firebaseUser.uid).catch(err => {
+              console.warn('⚠️ Failed to set up notifications:', err);
+            });
           } else if (lastError) {
             // Firestore is unavailable, use Firebase Auth data as fallback
             console.warn('⚠️ Firestore unavailable, using Firebase Auth data as fallback');
@@ -68,6 +91,11 @@ export default function RootLayout() {
               preferredLanguage: 'en', // Default
               status: 'online',
               photoURL: firebaseUser.photoURL,
+            });
+            
+            // Still try to request notification permissions
+            requestNotificationPermissions(firebaseUser.uid).catch(err => {
+              console.warn('⚠️ Failed to set up notifications:', err);
             });
           } else {
             console.warn('⚠️ User document not found in Firestore (user may need to sign up again)');
@@ -95,6 +123,37 @@ export default function RootLayout() {
 
     return unsubscribe;
   }, []);
+
+  // Set up notification listeners (mobile only)
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      console.log('⚠️ Notifications not supported on web');
+      return;
+    }
+
+    // Listen for notifications received while app is foregrounded
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('📬 Foreground notification received:', notification);
+    });
+
+    // Listen for user tapping on notification
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('👆 Notification tapped:', response);
+      const chatId = response.notification.request.content.data?.chatId;
+      if (chatId) {
+        router.push(`/chat/${chatId}` as any);
+      }
+    });
+
+    return () => {
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, [router]);
 
   // Handle authentication-based routing
   useEffect(() => {
