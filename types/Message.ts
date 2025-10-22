@@ -9,15 +9,19 @@ export interface Message {
   readBy: { [userId: string]: number };
   mediaURL?: string;
   localOnly?: boolean;
+  type?: 'message' | 'system'; // System messages for group events
+  senderName?: string; // Cached sender name for groups
 }
 
 export interface Chat {
   id: string;
   type: 'direct' | 'group';
   participants: string[];
+  name?: string; // Group name (only for group chats)
+  createdBy?: string; // Group creator UID
   lastMessage?: string;
   lastMessageTimestamp?: number;
-  unreadCount: number;
+  unreadCount: number | { [userId: string]: number };
 }
 
 export interface PendingMessage {

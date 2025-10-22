@@ -105,7 +105,7 @@ export default function RootLayout() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inTabsGroup = segments[0] === '(tabs)';
-    const inModalOrChat = segments[0] === 'new-chat' || segments[0] === 'chat';
+    const inModalOrChat = segments[0] === 'new-chat' || segments[0] === 'new-group' || segments[0] === 'chat';
 
     console.log('📍 Route check:', { inAuthGroup, inTabsGroup, inModalOrChat });
 
@@ -144,6 +144,13 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen 
           name="new-chat" 
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen 
+          name="new-group" 
           options={{
             presentation: 'modal',
             headerShown: false,

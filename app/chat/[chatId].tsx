@@ -25,6 +25,7 @@ import {
   setDoc,
   deleteDoc,
   writeBatch,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { dbOperations } from '../../services/database';
@@ -42,8 +43,27 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [othersTyping, setOthersTyping] = useState(false);
+  const [chatData, setChatData] = useState<any>(null);
   const flashListRef = useRef<FlashList<Message>>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Load chat data
+  useEffect(() => {
+    if (!chatId) return;
+
+    const loadChatData = async () => {
+      try {
+        const chatDoc = await getDoc(doc(db, 'chats', chatId));
+        if (chatDoc.exists()) {
+          setChatData({ id: chatDoc.id, ...chatDoc.data() });
+        }
+      } catch (error) {
+        console.error('❌ Error loading chat data:', error);
+      }
+    };
+
+    loadChatData();
+  }, [chatId]);
 
   // Load messages from SQLite first (instant, no loading state)
   useEffect(() => {
@@ -129,9 +149,15 @@ export default function ChatScreen() {
   // Memoized render function for performance
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
-      return <MessageBubble message={item} isOwn={item.senderId === user?.uid} />;
+      return (
+        <MessageBubble 
+          message={item} 
+          isOwn={item.senderId === user?.uid} 
+          isGroupChat={chatData?.type === 'group'}
+        />
+      );
     },
-    [user?.uid]
+    [user?.uid, chatData?.type]
   );
 
   // Memoized keyExtractor
@@ -332,7 +358,16 @@ export default function ChatScreen() {
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Chat</Text>
+          <Text style={styles.headerTitle}>
+            {chatData?.type === 'group' 
+              ? chatData?.name || 'Group Chat'
+              : 'Chat'}
+          </Text>
+          {chatData?.type === 'group' && (
+            <Text style={styles.participantCount}>
+              {chatData?.participants?.length || 0} participants
+            </Text>
+          )}
           {connectionStatus !== 'online' && (
             <Text style={styles.connectionStatus}>
               {connectionStatus === 'offline' ? '⚠️ Offline' : '🔄 Reconnecting...'}
@@ -426,6 +461,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1a1a1a',
+  },
+  participantCount: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
   },
   connectionStatus: {
     fontSize: 12,

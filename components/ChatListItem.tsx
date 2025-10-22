@@ -15,9 +15,16 @@ export function ChatListItem({ chat }: ChatListItemProps) {
   const currentUser = useStore((state) => state.user);
   const [otherUserName, setOtherUserName] = useState<string>('Loading...');
 
-  // Fetch the other participant's details
+  // Fetch chat name (group name or other user's name)
   useEffect(() => {
-    const fetchOtherUser = async () => {
+    const fetchChatName = async () => {
+      // For group chats, use the group name
+      if (chat.type === 'group') {
+        setOtherUserName(chat.name || 'Group Chat');
+        return;
+      }
+
+      // For direct chats, fetch the other user's name
       const otherParticipantId = chat.participants.find(p => p !== currentUser?.uid);
       if (!otherParticipantId) {
         setOtherUserName('Unknown');
@@ -37,8 +44,8 @@ export function ChatListItem({ chat }: ChatListItemProps) {
       }
     };
 
-    fetchOtherUser();
-  }, [chat.participants, currentUser?.uid]);
+    fetchChatName();
+  }, [chat.type, chat.name, chat.participants, currentUser?.uid]);
 
   const formatTimestamp = (timestamp?: number) => {
     if (!timestamp) return '';
@@ -73,9 +80,9 @@ export function ChatListItem({ chat }: ChatListItemProps) {
       activeOpacity={0.7}
     >
       {/* Avatar */}
-      <View style={styles.avatar}>
+      <View style={[styles.avatar, chat.type === 'group' && styles.groupAvatar]}>
         <Text style={styles.avatarText}>
-          {otherUserName[0].toUpperCase()}
+          {chat.type === 'group' ? '👥' : otherUserName[0].toUpperCase()}
         </Text>
       </View>
 
@@ -131,6 +138,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  groupAvatar: {
+    backgroundColor: '#34C759',
   },
   contentContainer: {
     flex: 1,

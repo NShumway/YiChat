@@ -58,6 +58,11 @@ export default function ChatsScreen() {
     router.push('/new-chat' as any);
   };
 
+  const handleNewGroup = () => {
+    console.log('👥 Navigating to new-group');
+    router.push('/new-group' as any);
+  };
+
   const handleLogout = async () => {
     Alert.alert(
       'Log Out',
@@ -170,6 +175,12 @@ export default function ChatsScreen() {
               onPress={handleNewChat}
             >
               <Text style={styles.fabText}>+</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fabSecondary}
+              onPress={handleNewGroup}
+            >
+              <Text style={styles.fabSecondaryText}>👥</Text>
             </TouchableOpacity>
           </>
         )}
@@ -323,6 +334,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '300',
     marginTop: -2,
+  },
+  fabSecondary: {
+    position: 'absolute',
+    right: 20,
+    bottom: 90,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#34C759',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  fabSecondaryText: {
+    fontSize: 24,
   },
   logoutButton: {
     margin: 20,

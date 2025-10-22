@@ -1,14 +1,37 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
 import { Message } from '../types/Message';
 
 interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
+  isGroupChat?: boolean;
 }
 
 export const MessageBubble = memo(
-  ({ message, isOwn }: MessageBubbleProps) => {
+  ({ message, isOwn, isGroupChat }: MessageBubbleProps) => {
+    const [senderName, setSenderName] = useState<string>('');
+
+    // Fetch sender name for group chats
+    useEffect(() => {
+      if (!isGroupChat || isOwn || message.type === 'system') return;
+
+      const fetchSenderName = async () => {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', message.senderId));
+          if (userDoc.exists()) {
+            setSenderName(userDoc.data().displayName || 'Unknown');
+          }
+        } catch (error) {
+          console.error('Error fetching sender name:', error);
+        }
+      };
+
+      fetchSenderName();
+    }, [isGroupChat, isOwn, message.senderId, message.type]);
+
     const formatTime = (timestamp: number) => {
       const date = new Date(timestamp);
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -45,9 +68,21 @@ export const MessageBubble = memo(
       return readByOthers;
     };
 
+    // System messages (group events)
+    if (message.type === 'system') {
+      return (
+        <View style={styles.systemMessageContainer}>
+          <Text style={styles.systemMessageText}>{message.text}</Text>
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
         <View style={[styles.bubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
+          {isGroupChat && !isOwn && senderName && (
+            <Text style={styles.senderName}>{senderName}</Text>
+          )}
           <Text style={[styles.text, isOwn ? styles.ownText : styles.otherText]}>
             {message.text}
           </Text>
@@ -138,6 +173,23 @@ const styles = StyleSheet.create({
   },
   statusRead: {
     color: '#4CAF50',
+  },
+  senderName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  systemMessageContainer: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  systemMessageText: {
+    fontSize: 13,
+    color: '#999',
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });
 
