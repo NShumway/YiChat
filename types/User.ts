@@ -4,5 +4,6 @@ export interface User {
   email: string;
   photoURL?: string;
   preferredLanguage: string;
+  status?: 'online' | 'offline';
 }
 

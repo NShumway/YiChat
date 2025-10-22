@@ -1,85 +1,124 @@
-import { View, Text, StyleSheet, Button } from 'react-native';
-import { useEffect, useState } from 'react';
-import { auth, db, storage } from '../../services/firebase';
-import { dbOperations } from '../../services/database';
-import { Message } from '../../types/Message';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { signOut } from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../../services/firebase';
 import { useStore } from '../../store/useStore';
 
 export default function ChatsScreen() {
-  const [firebaseStatus, setFirebaseStatus] = useState('Checking...');
-  const [dbStatus, setDbStatus] = useState('Testing...');
-  
-  // Test Zustand state management
-  const { connectionStatus, setConnectionStatus, isAuthenticated } = useStore();
+  const router = useRouter();
+  const { user, logout, connectionStatus } = useStore();
 
-  useEffect(() => {
-    // Test Firebase initialization
-    try {
-      if (auth && db && storage) {
-        setFirebaseStatus('Firebase Connected ✓');
-      } else {
-        setFirebaseStatus('Firebase Error');
-      }
-    } catch (error) {
-      setFirebaseStatus('Firebase Error: ' + (error as Error).message);
-    }
+  const handleLogout = async () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Update user status to offline
+              if (user) {
+                await updateDoc(doc(db, 'users', user.uid), {
+                  status: 'offline',
+                  lastSeen: new Date(),
+                });
+              }
 
-    // Test SQLite database after a small delay to ensure initialization
-    setTimeout(() => {
-      testDatabase();
-    }, 100);
-  }, []);
-
-  const testDatabase = () => {
-    try {
-      // Test insert
-      const testMessage: Message = {
-        id: 'test-1',
-        chatId: 'test-chat',
-        senderId: 'user-1',
-        text: 'Test message',
-        timestamp: Date.now(),
-        status: 'sent',
-        readBy: {}
-      };
-      dbOperations.insertMessage(testMessage);
-
-      // Test retrieve
-      const messages = dbOperations.getMessagesByChat('test-chat');
-      if (messages.length > 0) {
-        setDbStatus(`SQLite Connected ✓ (${messages.length} msg)`);
-      } else {
-        setDbStatus('SQLite: No messages found');
-      }
-    } catch (error) {
-      setDbStatus('SQLite Error: ' + (error as Error).message);
-    }
+              // Sign out from Firebase
+              await signOut(auth);
+              
+              // Clear Zustand state
+              logout();
+              
+              // Navigate to login
+              router.replace('/(auth)/login');
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Error', 'Failed to log out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
-  const testConnectionStatus = () => {
-    const statuses: ('online' | 'offline' | 'reconnecting')[] = ['online', 'offline', 'reconnecting'];
-    const currentIndex = statuses.indexOf(connectionStatus);
-    const nextStatus = statuses[(currentIndex + 1) % statuses.length];
-    setConnectionStatus(nextStatus);
+  const getLanguageEmoji = (code: string) => {
+    const languages: { [key: string]: string } = {
+      en: '🇬🇧', es: '🇪🇸', fr: '🇫🇷', de: '🇩🇪',
+      zh: '🇨🇳', ja: '🇯🇵', ko: '🇰🇷', pt: '🇵🇹',
+      ru: '🇷🇺', ar: '🇸🇦', hi: '🇮🇳', it: '🇮🇹',
+    };
+    return languages[code] || '🌐';
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Welcome to YiChat!</Text>
-      <Text style={styles.subtext}>Your chats will appear here.</Text>
-      
-      <View style={styles.statusContainer}>
-        <Text style={styles.status}>{firebaseStatus}</Text>
-        <Text style={styles.status}>{dbStatus}</Text>
-        <Text style={styles.status}>
-          Zustand: {connectionStatus} {isAuthenticated ? '(Authenticated)' : '(Guest)'} ✓
+      {/* User Profile Section */}
+      <View style={styles.profileSection}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user?.displayName?.[0]?.toUpperCase() || '?'}
+          </Text>
+        </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{user?.displayName}</Text>
+          <View style={styles.languageContainer}>
+            <Text style={styles.languageFlag}>
+              {getLanguageEmoji(user?.preferredLanguage || 'en')}
+            </Text>
+            <Text style={styles.languageText}>
+              {user?.preferredLanguage?.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+        <View style={[
+          styles.statusDot,
+          connectionStatus === 'online' ? styles.statusOnline :
+          connectionStatus === 'offline' ? styles.statusOffline :
+          styles.statusReconnecting
+        ]} />
+      </View>
+
+      {/* Main Content */}
+      <View style={styles.content}>
+        <Text style={styles.title}>Welcome to YiChat! 🌍</Text>
+        <Text style={styles.subtitle}>
+          Your multilingual messaging app
         </Text>
+        
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>💬</Text>
+          <Text style={styles.emptyText}>No chats yet</Text>
+          <Text style={styles.emptySubtext}>
+            Start a conversation to see your chats here
+          </Text>
+        </View>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>✅ Phase 1 Complete!</Text>
+          <Text style={styles.infoText}>
+            • User authentication{'\n'}
+            • Firebase & SQLite setup{'\n'}
+            • Auth state persistence{'\n'}
+            • Secure logout
+          </Text>
+        </View>
       </View>
-      
-      <View style={styles.buttonContainer}>
-        <Button title="Test Database" onPress={testDatabase} />
-        <Button title="Toggle Connection" onPress={testConnectionStatus} />
-      </View>
+
+      {/* Logout Button */}
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={handleLogout}
+      >
+        <Text style={styles.logoutText}>Log Out</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -87,35 +126,137 @@ export default function ChatsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  profileSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
     backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    marginRight: 12,
   },
-  text: {
+  avatarText: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 8,
+    color: '#fff',
   },
-  subtext: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 24,
+  userInfo: {
+    flex: 1,
   },
-  statusContainer: {
-    gap: 8,
-    marginBottom: 24,
+  userName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
+    marginBottom: 4,
+  },
+  languageContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  status: {
+  languageFlag: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  languageText: {
     fontSize: 14,
-    color: '#4CAF50',
+    color: '#666',
     fontWeight: '600',
   },
-  buttonContainer: {
-    gap: 12,
+  statusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginLeft: 12,
+  },
+  statusOnline: {
+    backgroundColor: '#4CAF50',
+  },
+  statusOffline: {
+    backgroundColor: '#999',
+  },
+  statusReconnecting: {
+    backgroundColor: '#FF9800',
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 40,
+    textAlign: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
+  infoBox: {
+    backgroundColor: '#E8F5E9',
+    padding: 20,
+    borderRadius: 12,
     width: '100%',
-    maxWidth: 300,
+    maxWidth: 400,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#2E7D32',
+    lineHeight: 22,
+  },
+  logoutButton: {
+    margin: 20,
+    height: 48,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+  },
+  logoutText: {
+    color: '#FF3B30',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

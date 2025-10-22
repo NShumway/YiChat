@@ -391,7 +391,7 @@ const testSecurityRules = async () => {
 
 ## Phase 1: Authentication (MVP Critical)
 
-### US-1.1: Build Sign Up Screen
+### US-1.1: Build Sign Up Screen ✅ COMPLETED
 **As a** new user  
 **I want** to create an account with email/password  
 **So that** I can start using YiChat
@@ -415,7 +415,7 @@ export default function SignUpScreen() {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName });
       
-      // Create user document in Firestore
+      // Create user document in Firestore with retry logic
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         uid: userCredential.user.uid,
         displayName,
@@ -435,9 +435,13 @@ export default function SignUpScreen() {
 }
 ```
 
+**Firebase Console Setup:**
+1. Enable Email/Password Sign-In: **Authentication** → **Sign-in method** → **Email/Password** → Enable
+
 **Leverage Library Strengths:**
 - Firebase Auth handles password validation, email verification
 - Firestore `setDoc` is atomic
+- AsyncStorage provides automatic auth persistence
 
 **Acceptance Criteria:**
 - ✅ User can sign up with valid email/password
@@ -446,10 +450,14 @@ export default function SignUpScreen() {
 - ✅ Password must be 6+ characters
 - ✅ User document created in Firestore users collection
 - ✅ Redirects to main app after signup
+- ✅ Retry logic for Firestore writes (handles network issues)
+
+**Testing:**
+See **Phase 1 Testing Guide** below for comprehensive test scenarios.
 
 ---
 
-### US-1.2: Build Login Screen
+### US-1.2: Build Login Screen ✅ COMPLETED
 **As a** returning user  
 **I want** to log in with my credentials  
 **So that** I can access my messages
@@ -459,11 +467,14 @@ Create `app/(auth)/login.tsx`:
 ```typescript
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '@/services/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 
 const handleLogin = async () => {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    
+    // Get user data from Firestore with retry logic
+    const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
     
     // Update online status
     await updateDoc(doc(db, 'users', userCredential.user.uid), {
@@ -473,20 +484,25 @@ const handleLogin = async () => {
     
     router.replace('/(tabs)');
   } catch (error) {
-    // Handle error
+    // Handle error with fallback to Firebase Auth data if Firestore unavailable
   }
 };
 ```
 
 **Acceptance Criteria:**
-- ✅ User can log in with correct credentials
+- ✅ User can log in with email/password
 - ✅ Invalid credentials show clear error
 - ✅ User status updated to 'online' in Firestore
 - ✅ Redirects to chat list after login
+- ✅ Retry logic with fallback if Firestore unavailable
+- ✅ Loading states with proper error handling
+
+**Testing:**
+See **Phase 1 Testing Guide** below for comprehensive test scenarios.
 
 ---
 
-### US-1.3: Implement Auth State Persistence
+### US-1.3: Implement Auth State Persistence ✅ COMPLETED
 **As a** user  
 **I want** to stay logged in after closing the app  
 **So that** I don't have to log in every time
@@ -494,41 +510,285 @@ const handleLogin = async () => {
 **Implementation:**
 In `app/_layout.tsx`:
 ```typescript
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/services/firebase';
+import { auth, db } from '@/services/firebase';
 import { useStore } from '@/store/useStore';
+import { doc, getDoc } from 'firebase/firestore';
+import { useRouter, useSegments } from 'expo-router';
 
 export default function RootLayout() {
-  const setUser = useStore((state) => state.setUser);
+  const [isLoading, setIsLoading] = useState(true);
+  const { setUser, isAuthenticated } = useStore();
+  const segments = useSegments();
+  const router = useRouter();
   
   useEffect(() => {
+    // Initialize SQLite database
+    initDatabase();
+    
+    // Set up Firebase auth state listener
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // Fetch full user data from Firestore
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        setUser(userDoc.data() as User);
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setUser({
+            uid: firebaseUser.uid,
+            displayName: userData.displayName,
+            email: userData.email,
+            preferredLanguage: userData.preferredLanguage,
+            status: 'online',
+            photoURL: userData.photoURL,
+          });
+        }
       } else {
         setUser(null);
       }
+      setIsLoading(false);
     });
     
     return unsubscribe;
   }, []);
   
-  // Router logic to show auth or main app
+  // Handle authentication-based routing
+  useEffect(() => {
+    if (isLoading) return;
+    
+    const inAuthGroup = segments[0] === '(auth)';
+    
+    if (!isAuthenticated && !inAuthGroup) {
+      router.replace('/(auth)/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, segments, isLoading]);
+  
+  // Show loading screen while checking auth
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 }
 ```
 
 **Leverage Library Strengths:**
-- Firebase Auth automatically persists auth state
-- `onAuthStateChanged` handles token refresh
+- Firebase Auth with `@react-native-async-storage/async-storage` persists auth state across app restarts
+- `onAuthStateChanged` handles token refresh automatically
+- `initializeAuth` with `getReactNativePersistence` enables session persistence
+- Expo Router handles navigation based on auth state
 
 **Acceptance Criteria:**
 - ✅ User stays logged in after app restart
 - ✅ Auth state loads before showing UI
 - ✅ Loading screen shown while checking auth
-- ✅ User redirected appropriately based on auth state
+- ✅ User redirected to login if not authenticated
+- ✅ User redirected to main app if authenticated
+- ✅ Works correctly after force quit
+- ✅ Logout clears persisted session
+- ✅ Handles missing Firestore data gracefully
+
+**Testing:**
+See **Phase 1 Testing Guide** below for comprehensive test scenarios.
+
+---
+
+## Phase 1: Testing Guide
+
+### Test Scenario 1: Email/Password Sign Up
+**Steps:**
+1. Launch app (should show login screen)
+2. Tap "Sign Up" link
+3. Enter:
+   - Display Name: "Test User"
+   - Email: "testuser@example.com"
+   - Password: "password123"
+   - Confirm Password: "password123"
+4. Select preferred language (e.g., Spanish 🇪🇸)
+5. Tap "Create Account"
+
+**Expected Results:**
+- ✅ Loading indicator shows briefly
+- ✅ Navigates to main chat screen
+- ✅ Shows user profile with name "Test User"
+- ✅ Shows Spanish flag (🇪🇸) and "ES" language code
+- ✅ Green online status dot visible
+- ✅ Info box shows "✅ Phase 1 Complete!"
+
+**Verify in Firestore:**
+- Open Firebase Console → Firestore Database
+- Check `users` collection → Should see document with your UID
+- Verify fields: `displayName`, `email`, `preferredLanguage: "es"`, `status: "online"`
+
+---
+
+### Test Scenario 2: Logout and Login
+**Steps:**
+1. From main screen, tap "Log Out" button
+2. Confirm logout in alert dialog
+3. Should return to login screen
+4. Enter email and password from Test Scenario 1
+5. Tap "Log In"
+
+**Expected Results:**
+- ✅ Logout shows confirmation alert
+- ✅ After logout, shows login screen
+- ✅ Can log back in with same credentials
+- ✅ User data preserved (name, language, etc.)
+- ✅ Status updates to "online" in Firestore
+
+**Verify in Firestore:**
+- Check user document → `status` should be "offline" after logout
+- After login → `status` should be "online"
+- `lastSeen` timestamp should update
+
+---
+
+### Test Scenario 3: Auth State Persistence
+**Steps:**
+1. Log in with email/password
+2. **Force quit the app** (swipe up from app switcher)
+3. Reopen the app
+
+**Expected Results:**
+- ✅ Shows loading screen briefly
+- ✅ Automatically logs you in (no login screen)
+- ✅ Goes directly to main chat screen
+- ✅ User data still present (name, language, status)
+
+**Additional Test:**
+1. Log in
+2. Wait 5 seconds
+3. Put app in background (go to home screen)
+4. Wait 10 seconds
+5. Reopen app
+
+**Expected:**
+- ✅ Still logged in
+- ✅ No need to re-authenticate
+
+---
+
+### Test Scenario 4: Form Validation
+**Test 6A: Invalid Email**
+1. Go to Sign Up screen
+2. Enter email: "notanemail"
+3. Tap "Create Account"
+
+**Expected:** ✅ Shows "Please enter a valid email address"
+
+**Test 6B: Password Too Short**
+1. Enter password: "123"
+2. Confirm password: "123"
+3. Tap "Create Account"
+
+**Expected:** ✅ Shows "Password must be at least 6 characters"
+
+**Test 6C: Passwords Don't Match**
+1. Enter password: "password123"
+2. Confirm password: "password456"
+3. Tap "Create Account"
+
+**Expected:** ✅ Shows "Passwords do not match"
+
+**Test 6D: Email Already Exists**
+1. Try to sign up with email from Test Scenario 1
+2. Tap "Create Account"
+
+**Expected:** ✅ Shows "This email is already registered. Please log in instead."
+
+---
+
+### Test Scenario 5: Network Errors
+**Test 7A: Offline Sign Up**
+1. Enable airplane mode
+2. Try to sign up
+3. Tap "Create Account"
+
+**Expected:** ✅ Shows "Network error. Please check your connection."
+
+**Test 7B: Invalid Login Credentials**
+1. Disable airplane mode
+2. Go to Login screen
+3. Enter wrong password
+4. Tap "Log In"
+
+**Expected:** ✅ Shows "Invalid email or password"
+
+---
+
+### Test Scenario 6: UI/UX Testing
+**Checklist:**
+- ✅ Language selection chips scroll horizontally
+- ✅ Selected language highlighted in blue
+- ✅ Loading indicators show during authentication
+- ✅ Input fields disabled during submission
+- ✅ Keyboard doesn't cover input fields (KeyboardAvoidingView)
+- ✅ Can scroll sign up form if screen is small
+- ✅ Login/Sign Up links work correctly
+- ✅ Status dot colors correct (green=online, gray=offline)
+
+---
+
+### Test Scenario 7: Security Verification
+**Steps:**
+1. Sign up with a test account
+2. Open Firebase Console → Firestore Database
+3. Try to manually edit another user's document
+
+**Expected:**
+- ✅ Firebase Console allows edit (admin access)
+- But from app, Security Rules should block unauthorized access
+
+**Test in Firebase Console → Firestore → Rules tab:**
+1. Click "Simulator"
+2. Type: `get`, Path: `/users/some-user-id`
+3. Authenticated: unchecked
+4. Click "Run"
+
+**Expected:** ✅ Shows "❌ Denied" (unauthenticated users blocked)
+
+5. Check "Authenticated", set Firebase UID
+6. Click "Run"
+
+**Expected:** ✅ Shows "✅ Allowed" (authenticated users can read user profiles)
+
+---
+
+### Performance Testing
+**Acceptance Criteria:**
+- ✅ App launch to login screen: <2 seconds
+- ✅ Sign up with email: <3 seconds (including Firestore write)
+- ✅ Login with email: <2 seconds
+- ✅ Auth state check on app restart: <1 second
+
+**How to Test:**
+- Use stopwatch or `console.time()` to measure
+- Test on both fast and slow network (Network Link Conditioner on iOS)
+
+---
+
+### Known Issues / Limitations
+1. **Google Sign-In**: NOT IMPLEMENTED in MVP - OAuth redirect URIs incompatible with Expo Go development workflow
+2. **Profile pictures**: Not implemented in Phase 1 (Phase 2 feature)
+3. **Email verification**: Not required for MVP (can add in future)
+
+---
+
+### Troubleshooting
+
+**"Permission denied" in Firestore**
+- Deploy Security Rules: `firebase deploy --only firestore:rules`
+- Check rules allow authenticated users to read/write
+
+**"User document not found"**
+- Check Firestore write succeeded after sign up
+- Verify Firebase project ID matches `.env.local`
+
+**"App doesn't persist login"**
+- Firebase Auth auto-persists using AsyncStorage
+- Clear app data and reinstall if corrupted
+- Check `onAuthStateChanged` listener in `app/_layout.tsx`
 
 ---
 

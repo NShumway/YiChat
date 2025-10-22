@@ -32,7 +32,8 @@ module.exports = {
     },
     plugins: [
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     extra: {
       firebaseApiKey: process.env.FIREBASE_API_KEY,
@@ -41,7 +42,12 @@ module.exports = {
       firebaseStorageBucket: process.env.FIREBASE_STORAGE_BUCKET,
       firebaseMessagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
       firebaseAppId: process.env.FIREBASE_APP_ID,
-    }
+      // Google OAuth Client IDs (get from Google Cloud Console)
+      googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID,
+      googleIosClientId: process.env.GOOGLE_IOS_CLIENT_ID,
+      googleAndroidClientId: process.env.GOOGLE_ANDROID_CLIENT_ID,
+    },
+    scheme: "yichat"
   }
 };
 

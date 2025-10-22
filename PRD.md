@@ -29,6 +29,41 @@ YiChat is a messaging app designed for people communicating across language barr
 
 ---
 
+## Authentication & User Management
+
+### Sign-Up Methods
+1. **Email/Password** - Traditional account creation ✅ IMPLEMENTED
+   - Display name input
+   - Preferred language selection (12 languages supported)
+   - Email verification (optional)
+   
+2. **Google Sign-In (OAuth 2.0)** - One-tap authentication ⚠️ NOT IN MVP
+   - Code exists but not functional in Expo Go
+   - Requires production standalone builds (EAS Build)
+   - Will be added post-MVP for production releases
+
+### Supported Languages
+- 🇬🇧 English
+- 🇪🇸 Spanish
+- 🇫🇷 French
+- 🇩🇪 German
+- 🇨🇳 Chinese
+- 🇯🇵 Japanese
+- 🇰🇷 Korean
+- 🇵🇹 Portuguese
+- 🇷🇺 Russian
+- 🇸🇦 Arabic
+- 🇮🇳 Hindi
+- 🇮🇹 Italian
+
+### Auth Features
+- **Auto-persistence**: Stay logged in after app restart
+- **Session management**: Firebase handles token refresh automatically
+- **Security**: All auth tokens server-side, never in client code
+- **Logout**: Secure sign out with status update to "offline"
+
+---
+
 ## Core Messaging Infrastructure
 
 ### Real-Time Messaging (Sub-200ms delivery)
@@ -165,7 +200,7 @@ YiChat is a messaging app designed for people communicating across language barr
 ```
 ├── Firestore (messages, users, groups)
 ├── Cloud Functions (AI calls, translation)
-├── Firebase Auth (email/password + optional social)
+├── Firebase Auth (email/password + Google OAuth 2.0)
 ├── Firebase Cloud Messaging (push notifications)
 ├── Firebase Storage (profile pictures, media)
 └── Firestore Security Rules (protect data, prevent direct AI API access)
@@ -174,8 +209,10 @@ YiChat is a messaging app designed for people communicating across language barr
 **Security Architecture:**
 - All AI API keys stored in Cloud Functions config (never in client)
 - Firebase config in app is public (by design, protected by Security Rules)
+- Google OAuth Client IDs in environment variables (not committed to git)
 - Security Rules enforce: users can only read chats they're participants in
 - Message writes validated: senderId must match authenticated user
+- OAuth tokens managed by Firebase (never stored in app)
 
 ### AI Stack
 ```
@@ -242,11 +279,11 @@ YiChat is a messaging app designed for people communicating across language barr
 ## User Flows
 
 ### First-Time Setup
-1. Sign up with email/password
-2. Set display name and profile picture
-3. **Select preferred language** (critical for YiChat)
-4. Grant notification permissions
-5. Tutorial: "See translation" tap demo
+1. **Sign up with email/password OR Google Sign-In**
+   - Email/password: Set display name, choose preferred language
+   - Google Sign-In: Auto-imports name and profile picture, default language English
+2. Grant notification permissions
+3. Tutorial: "See translation" tap demo (optional)
 
 ### Send Message with Translation
 1. User types message in their language
@@ -290,7 +327,11 @@ YiChat is a messaging app designed for people communicating across language barr
 ## MVP Checklist (24 Hours)
 
 ### Core Messaging Features
-- [ ] User authentication (Firebase Auth)
+- [x] User authentication (Firebase Auth - Email/Password)
+- [x] Auth state persistence (stay logged in)
+- [x] User profiles with language preference
+- [x] Logout with status update
+- [ ] Google Sign-In (deferred to production builds)
 - [ ] One-on-one chat with real-time delivery
 - [ ] Message persistence (SQLite)
 - [ ] Optimistic UI updates
