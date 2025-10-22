@@ -47,15 +47,28 @@ export default function ChatScreen() {
   const flashListRef = useRef<FlashList<Message>>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Load chat data
+  // Load chat data and reset unread count
   useEffect(() => {
-    if (!chatId) return;
+    if (!chatId || !user) return;
 
     const loadChatData = async () => {
       try {
         const chatDoc = await getDoc(doc(db, 'chats', chatId));
         if (chatDoc.exists()) {
           setChatData({ id: chatDoc.id, ...chatDoc.data() });
+          
+          // Reset unread count for this user
+          const chatData = chatDoc.data();
+          const currentUnreadCount = typeof chatData.unreadCount === 'object' 
+            ? (chatData.unreadCount[user.uid] || 0)
+            : chatData.unreadCount;
+          
+          if (currentUnreadCount > 0) {
+            console.log(`📖 Resetting unread count for chat ${chatId}`);
+            await updateDoc(doc(db, 'chats', chatId), {
+              [`unreadCount.${user.uid}`]: 0
+            });
+          }
         }
       } catch (error) {
         console.error('❌ Error loading chat data:', error);
@@ -63,7 +76,7 @@ export default function ChatScreen() {
     };
 
     loadChatData();
-  }, [chatId]);
+  }, [chatId, user]);
 
   // Load messages from SQLite first (instant, no loading state)
   useEffect(() => {
@@ -324,11 +337,27 @@ export default function ChatScreen() {
       // Don't update status yet - let Firestore listener handle it to avoid double-render
       dbOperations.updateMessageId(tempId, docRef.id);
 
-      // 7. Update chat's last message
-      await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: text,
-        lastMessageTimestamp: Date.now(),
-      });
+          // 7. Update chat's last message and increment unread count for other participants
+          const chatDoc = await getDoc(doc(db, 'chats', chatId));
+          if (chatDoc.exists()) {
+            const chatData = chatDoc.data();
+            const updates: any = {
+              lastMessage: text,
+              lastMessageTimestamp: Date.now(),
+            };
+            
+            // Increment unread count for all participants except sender
+            chatData.participants.forEach((participantId: string) => {
+              if (participantId !== user.uid) {
+                const currentCount = typeof chatData.unreadCount === 'object'
+                  ? (chatData.unreadCount[participantId] || 0)
+                  : 0;
+                updates[`unreadCount.${participantId}`] = currentCount + 1;
+              }
+            });
+            
+            await updateDoc(doc(db, 'chats', chatId), updates);
+          }
 
       // Firestore listener will sync and update UI (avoids double-render)
     } catch (error) {

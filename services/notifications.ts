@@ -29,20 +29,29 @@ export async function requestNotificationPermissions(userId: string): Promise<st
       return null;
     }
 
-    // Get push token
-    const token = await Notifications.getExpoPushTokenAsync({
-      projectId: 'yichat', // Replace with your Expo project ID if different
-    });
+    // Get push token (projectId is auto-detected from app.json)
+    let token;
+    try {
+      token = await Notifications.getExpoPushTokenAsync();
+      console.log('✅ Push token obtained:', token.data);
 
-    console.log('✅ Push token obtained:', token.data);
+      // Save token to Firestore
+      await updateDoc(doc(db, 'users', userId), {
+        pushToken: token.data,
+        pushTokenUpdatedAt: Date.now(),
+      });
 
-    // Save token to Firestore
-    await updateDoc(doc(db, 'users', userId), {
-      pushToken: token.data,
-      pushTokenUpdatedAt: Date.now(),
-    });
-
-    return token.data;
+      return token.data;
+    } catch (tokenError: any) {
+      // Push tokens require an Expo project ID (not available in bare Expo Go)
+      // This is expected in development - gracefully handle it
+      if (tokenError.message?.includes('projectId')) {
+        console.log('⚠️ Push tokens require Expo project setup (OK for dev/testing)');
+        console.log('   Foreground notifications will still work without push tokens');
+        return null;
+      }
+      throw tokenError;
+    }
   } catch (error) {
     console.error('❌ Error requesting notification permissions:', error);
     return null;
