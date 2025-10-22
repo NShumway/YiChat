@@ -15,6 +15,15 @@ export const MessageBubble = memo(
     };
 
     const getStatusIcon = () => {
+      // Check if message has been read by anyone other than sender
+      const readByOthers = Object.keys(message.readBy || {})
+        .filter(uid => uid !== message.senderId)
+        .length > 0;
+
+      if (readByOthers) {
+        return '✓✓'; // Read (will be blue)
+      }
+
       switch (message.status) {
         case 'sending':
           return '⏱';
@@ -22,13 +31,18 @@ export const MessageBubble = memo(
           return '✓';
         case 'delivered':
           return '✓✓';
-        case 'read':
-          return '✓✓';
         case 'failed':
           return '⚠';
         default:
-          return '';
+          return '✓';
       }
+    };
+
+    const isRead = () => {
+      const readByOthers = Object.keys(message.readBy || {})
+        .filter(uid => uid !== message.senderId)
+        .length > 0;
+      return readByOthers;
     };
 
     return (
@@ -42,7 +56,7 @@ export const MessageBubble = memo(
               {formatTime(message.timestamp)}
             </Text>
             {isOwn && (
-              <Text style={[styles.status, message.status === 'read' && styles.statusRead]}>
+              <Text style={[styles.status, isRead() && styles.statusRead]}>
                 {getStatusIcon()}
               </Text>
             )}
@@ -51,13 +65,17 @@ export const MessageBubble = memo(
       </View>
     );
   },
-  // Only re-render if message ID, text, or status changes
+  // Only re-render if message ID, text, status, or readBy changes
   (prevProps, nextProps) => {
+    const prevReadByCount = Object.keys(prevProps.message.readBy || {}).length;
+    const nextReadByCount = Object.keys(nextProps.message.readBy || {}).length;
+    
     return (
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.text === nextProps.message.text &&
       prevProps.message.status === nextProps.message.status &&
-      prevProps.isOwn === nextProps.isOwn
+      prevProps.isOwn === nextProps.isOwn &&
+      prevReadByCount === nextReadByCount // Re-render if readBy count changes
     );
   }
 );

@@ -22,6 +22,9 @@ import {
   serverTimestamp,
   doc,
   updateDoc,
+  setDoc,
+  deleteDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { dbOperations } from '../../services/database';
@@ -38,7 +41,9 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [othersTyping, setOthersTyping] = useState(false);
   const flashListRef = useRef<FlashList<Message>>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Load messages from SQLite first (instant, no loading state)
   useEffect(() => {
@@ -131,6 +136,113 @@ export default function ChatScreen() {
 
   // Memoized keyExtractor
   const keyExtractor = useCallback((item: Message) => item.id, []);
+
+  // Throttled typing indicator update
+  const updateTypingStatus = useCallback(() => {
+    if (!user || !chatId) return;
+    
+    setDoc(doc(db, 'typing', `${chatId}_${user.uid}`), {
+      userId: user.uid,
+      chatId,
+      timestamp: Date.now(),
+    }, { merge: true }).catch(err => {
+      console.warn('Failed to update typing status:', err);
+    });
+  }, [chatId, user]);
+
+  // Handle text input change
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    
+    if (!user || !chatId) return;
+    
+    // Update typing status (throttled by timeout)
+    updateTypingStatus();
+    
+    // Clear typing after 3 seconds of inactivity
+    clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      deleteDoc(doc(db, 'typing', `${chatId}_${user.uid}`)).catch(() => {});
+    }, 3000);
+  };
+
+  // Listen for other users typing
+  useEffect(() => {
+    if (!chatId || !user) return;
+
+    const q = query(
+      collection(db, 'typing'),
+      where('chatId', '==', chatId)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const typingUsers = snapshot.docs
+          .filter(docSnap => {
+            const data = docSnap.data();
+            // Filter out own user and stale indicators (>10s old)
+            return data.userId !== user.uid && 
+                   (Date.now() - data.timestamp < 10000);
+          })
+          .map(docSnap => docSnap.data().userId);
+
+        setOthersTyping(typingUsers.length > 0);
+      },
+      (error) => {
+        console.error('Typing indicator listener error:', error);
+      }
+    );
+
+    return unsubscribe;
+  }, [chatId, user]);
+
+  // Cleanup typing indicator on unmount
+  useEffect(() => {
+    return () => {
+      if (user && chatId) {
+        deleteDoc(doc(db, 'typing', `${chatId}_${user.uid}`)).catch(() => {});
+      }
+    };
+  }, [chatId, user]);
+
+  // Mark messages as read when viewing chat
+  useEffect(() => {
+    if (!chatId || !user || messages.length === 0) return;
+
+    const markMessagesAsRead = async () => {
+      try {
+        const unreadMessages = messages.filter(
+          m => m.senderId !== user.uid && 
+               !m.localOnly &&
+               !m.readBy?.[user.uid]
+        );
+
+        if (unreadMessages.length === 0) return;
+
+        console.log(`📖 Marking ${unreadMessages.length} messages as read`);
+
+        // Batch update for efficiency (up to 500 docs)
+        const batch = writeBatch(db);
+
+        unreadMessages.forEach(message => {
+          const messageRef = doc(db, 'messages', message.id);
+          batch.update(messageRef, {
+            [`readBy.${user.uid}`]: Date.now(),
+          });
+        });
+
+        await batch.commit();
+        console.log('✅ Read receipts sent');
+      } catch (error) {
+        console.error('❌ Error sending read receipts:', error);
+      }
+    };
+
+    // Mark as read after a short delay (user has time to see the messages)
+    const timer = setTimeout(markMessagesAsRead, 1000);
+    return () => clearTimeout(timer);
+  }, [chatId, user, messages]);
 
   const sendMessage = async () => {
     if (!messageText.trim() || !user || !chatId || isSending) return;
@@ -251,6 +363,13 @@ export default function ChatScreen() {
         }
       />
 
+      {/* Typing Indicator */}
+      {othersTyping && (
+        <View style={styles.typingIndicator}>
+          <Text style={styles.typingText}>💬 User is typing...</Text>
+        </View>
+      )}
+
       {/* Input Bar */}
       <View style={styles.inputContainer}>
         <TextInput
@@ -258,7 +377,7 @@ export default function ChatScreen() {
           placeholder="Type a message..."
           placeholderTextColor="#999"
           value={messageText}
-          onChangeText={setMessageText}
+          onChangeText={handleTextChange}
           multiline
           maxLength={1000}
           editable={!isSending}
@@ -336,6 +455,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+  },
+  typingIndicator: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  typingText: {
+    fontSize: 13,
+    color: '#666',
+    fontStyle: 'italic',
   },
   inputContainer: {
     flexDirection: 'row',
