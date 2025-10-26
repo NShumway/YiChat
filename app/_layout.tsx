@@ -8,7 +8,7 @@ import * as Notifications from 'expo-notifications';
 import { auth, db } from '../services/firebase';
 import { initDatabase } from '../services/database';
 import { useStore } from '../store/useStore';
-import { requestNotificationPermissions } from '../services/notifications';
+import { requestNotificationPermissions, initializeNotificationChannels } from '../services/notifications';
 import { useMessageNotifications } from '../hooks/useMessageNotifications';
 import { initMessageQueue } from '../services/messageQueue';
 import { initMessageSync } from '../services/messageSync';
@@ -67,6 +67,13 @@ export default function RootLayout() {
       console.log('✅ Message queue initialized');
     } catch (error) {
       console.error('❌ Failed to initialize message queue:', error);
+    }
+
+    // Initialize notification channels (Android)
+    try {
+      initializeNotificationChannels();
+    } catch (error) {
+      console.error('❌ Failed to initialize notification channels:', error);
     }
 
     // Set up Firebase auth state listener

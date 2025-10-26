@@ -8,6 +8,7 @@ import { useStore } from '../../store/useStore';
 import { Chat } from '../../types/Message';
 import { ChatListItem } from '../../components/ChatListItem';
 import { ConnectionBanner } from '../../components/ConnectionBanner';
+import { updateBadgeFromChats } from '../../services/notifications';
 
 export default function ChatsScreen() {
   const router = useRouter();
@@ -40,6 +41,11 @@ export default function ChatsScreen() {
         })) as Chat[];
         setChats(chatData);
         setIsLoading(false);
+
+        // Update badge count whenever chats change
+        if (user) {
+          updateBadgeFromChats(chatData, user.uid);
+        }
       },
       (error) => {
         console.error('❌ Error fetching chats:', error);

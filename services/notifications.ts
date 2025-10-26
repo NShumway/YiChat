@@ -4,6 +4,26 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 /**
+ * Initialize notification channels for Android
+ * Must be called before showing notifications on Android 8+
+ */
+export async function initializeNotificationChannels() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('messages', {
+      name: 'Messages',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#007AFF',
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+    });
+
+    console.log('✅ Android notification channel initialized');
+  }
+}
+
+/**
  * Request notification permissions and get Expo push token
  * Returns the push token if granted, null otherwise
  */
@@ -77,7 +97,12 @@ export async function showLocalNotification(
         title,
         body,
         data: data || {},
-        sound: true,
+        sound: 'default',
+        vibrate: [0, 250, 250, 250],
+        badge: 1, // Will be updated by badge count logic
+        ...(Platform.OS === 'android' && {
+          channelId: 'messages',
+        }),
       },
       trigger: null, // Show immediately
     });
@@ -98,15 +123,35 @@ export async function clearAllNotifications() {
 }
 
 /**
- * Set notification badge count (iOS)
+ * Set notification badge count (iOS & Android)
  */
 export async function setBadgeCount(count: number) {
   try {
-    if (Platform.OS === 'ios') {
-      await Notifications.setBadgeCountAsync(count);
-    }
+    await Notifications.setBadgeCountAsync(count);
+    console.log(`🔔 Badge count set to ${count}`);
   } catch (error) {
     console.error('❌ Error setting badge count:', error);
   }
+}
+
+/**
+ * Calculate total unread count across all chats
+ * Sums up unreadCount for the current user
+ */
+export function calculateTotalUnreadCount(chats: any[], userId: string): number {
+  return chats.reduce((total, chat) => {
+    const unreadCount = typeof chat.unreadCount === 'object'
+      ? (chat.unreadCount[userId] || 0)
+      : (chat.unreadCount || 0);
+    return total + unreadCount;
+  }, 0);
+}
+
+/**
+ * Update badge count based on total unread messages
+ */
+export async function updateBadgeFromChats(chats: any[], userId: string) {
+  const totalUnread = calculateTotalUnreadCount(chats, userId);
+  await setBadgeCount(totalUnread);
 }
 

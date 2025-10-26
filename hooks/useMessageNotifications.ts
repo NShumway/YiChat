@@ -23,6 +23,8 @@ export function useMessageNotifications() {
   const user = useStore((state) => state.user);
   const segments = useSegments();
   const notifiedMessageIds = useRef<Set<string>>(new Set());
+  const userChatIds = useRef<Set<string>>(new Set());
+  const pendingNotifications = useRef<Map<string, { count: number; timeout: NodeJS.Timeout }>>(new Map());
 
   useEffect(() => {
     // Skip on web - notifications not supported
@@ -38,16 +40,30 @@ export function useMessageNotifications() {
     const currentChatId = segments[0] === 'chat' && segments[1] ? segments[1] : null;
     console.log('📍 Current chat (notifications disabled for this chat):', currentChatId);
 
-    // Listen to ALL messages (we'll filter in client)
-    // Using a simple query to avoid index issues
+    // First, get user's chats to know which messages to listen to
+    const chatsQuery = query(
+      collection(db, 'chats'),
+      where('participants', 'array-contains', user.uid)
+    );
+
+    const chatsUnsubscribe = onSnapshot(chatsQuery, (chatsSnapshot) => {
+      // Update the set of chat IDs user is part of
+      userChatIds.current = new Set(chatsSnapshot.docs.map(doc => doc.id));
+      console.log(`🔔 User is in ${userChatIds.current.size} chat(s)`);
+    });
+
+    // Listen to messages, but only process those in user's chats
+    // Still need to query all messages since we can't do "where chatId in array" easily
+    // But we filter client-side with the cached chat IDs
     const messagesQuery = query(
       collection(db, 'messages'),
-      orderBy('timestamp', 'desc')
+      orderBy('timestamp', 'desc'),
+      limit(100) // Only watch recent 100 messages for performance
     );
 
     let isFirstSnapshot = true; // Skip first snapshot (existing messages)
 
-    const unsubscribe = onSnapshot(
+    const messagesUnsubscribe = onSnapshot(
       messagesQuery,
       async (snapshot) => {
         // Skip the first snapshot to avoid notifying for existing messages
@@ -60,12 +76,15 @@ export function useMessageNotifications() {
         // Only process ADDED documents (new messages)
         const newMessages = snapshot.docChanges().filter(change => change.type === 'added');
         console.log(`🔔 Received ${newMessages.length} new message(s)`);
-        
+
         for (const change of newMessages) {
           const messageData = change.doc.data();
           const messageId = change.doc.id;
-          
-          console.log(`📬 Processing message ${messageId} from ${messageData.senderId}`);
+
+          // Skip if not in user's chats
+          if (!userChatIds.current.has(messageData.chatId)) {
+            continue;
+          }
 
           // Skip if already notified
           if (notifiedMessageIds.current.has(messageId)) {
@@ -87,39 +106,67 @@ export function useMessageNotifications() {
             continue;
           }
 
+          console.log(`📬 Processing message ${messageId} from ${messageData.senderId}`);
+
           // Fetch chat info
           const chatDoc = await getDoc(doc(db, 'chats', messageData.chatId));
           if (!chatDoc.exists()) continue;
 
           const chatData = chatDoc.data();
 
-          // Verify user is a participant
-          if (!chatData.participants.includes(user.uid)) {
-            continue;
-          }
-
           // Fetch sender info
           const senderDoc = await getDoc(doc(db, 'users', messageData.senderId));
-          const senderName = senderDoc.exists() 
-            ? senderDoc.data().displayName 
+          const senderName = senderDoc.exists()
+            ? senderDoc.data().displayName
             : 'Someone';
 
-          // Determine notification title
-          let title = senderName;
-          if (chatData.type === 'group') {
-            const chatName = chatData.name || 'Group Chat';
-            title = `${senderName} in ${chatName}`;
-          }
-
-          // Show notification
-          console.log('📬 Showing notification for message:', messageId);
+          // Mark as notified
           notifiedMessageIds.current.add(messageId);
-          
-          await showLocalNotification(
-            title,
-            messageData.text,
-            { chatId: messageData.chatId }
-          );
+
+          // Group notifications by chat with debouncing
+          const chatId = messageData.chatId;
+          const pending = pendingNotifications.current.get(chatId);
+
+          if (pending) {
+            // Already have a pending notification for this chat
+            clearTimeout(pending.timeout);
+            pending.count++;
+
+            // Show grouped notification after short delay
+            const timeout = setTimeout(async () => {
+              const count = pending.count;
+              pendingNotifications.current.delete(chatId);
+
+              const title = chatData.type === 'group'
+                ? `${count} new messages in ${chatData.name || 'Group Chat'}`
+                : `${count} new messages from ${senderName}`;
+
+              await showLocalNotification(
+                title,
+                messageData.text, // Show latest message
+                { chatId }
+              );
+            }, 2000); // Wait 2s to group more messages
+
+            pending.timeout = timeout;
+          } else {
+            // First message from this chat - show immediately but set up grouping
+            const timeout = setTimeout(async () => {
+              pendingNotifications.current.delete(chatId);
+            }, 2000);
+
+            pendingNotifications.current.set(chatId, { count: 1, timeout });
+
+            const title = chatData.type === 'group'
+              ? `${senderName} in ${chatData.name || 'Group Chat'}`
+              : senderName;
+
+            await showLocalNotification(
+              title,
+              messageData.text,
+              { chatId }
+            );
+          }
         }
       },
       (error) => {
@@ -129,7 +176,12 @@ export function useMessageNotifications() {
 
     return () => {
       console.log('🔔 Cleaning up message notification listener');
-      unsubscribe();
+      chatsUnsubscribe();
+      messagesUnsubscribe();
+
+      // Clear all pending notification timeouts
+      pendingNotifications.current.forEach(pending => clearTimeout(pending.timeout));
+      pendingNotifications.current.clear();
     };
   }, [user, segments]);
 }
