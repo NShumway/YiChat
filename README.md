@@ -37,6 +37,44 @@ YiChat is a cross-platform messaging application designed for seamless communica
 - 💬 AI conversational context menu
 - 👥 Relationship context for personalized AI
 
+## 📖 Feature Details
+
+### Read Receipts
+
+**Direct Chats:**
+- ✓ = Message sent to server
+- ✓✓ (gray) = Message delivered to recipient's device
+- ✓✓ (blue) = Message read by recipient
+
+**Group Chats:**
+- No indicator = Message not yet read by anyone
+- "Read by some" = At least one person (not all) has read the message
+- "Read by all" = Every participant has read the message
+
+Tap any read receipt indicator in a group chat to see:
+- Who has read the message (with timestamp)
+- Who hasn't read it yet
+
+Read receipts update in real-time as participants view messages.
+
+### Online/Offline Presence
+
+- 🟢 Green dot = User is currently online
+- ⚫ Gray dot = User is offline
+
+**How it works:**
+- Presence is updated every 15 seconds while the app is active
+- Users are marked offline after 30 seconds of inactivity
+- Status updates automatically when app backgrounds/foregrounds
+- Works in both direct chats and group chats
+
+### Typing Indicators
+
+See "..." when someone is typing in a direct chat. Indicators disappear when:
+- User stops typing for 3 seconds
+- User sends the message
+- User leaves the chat
+
 ## 🛠️ Tech Stack
 
 **Frontend:**

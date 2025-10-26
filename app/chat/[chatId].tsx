@@ -36,6 +36,7 @@ import { Message } from '../../types/Message';
 import { MessageBubble } from '../../components/MessageBubble';
 import { ConnectionBanner } from '../../components/ConnectionBanner';
 import { safeGetDoc } from '../../services/firestoreHelpers';
+import { subscribeToUserPresence } from '../../services/presence';
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -79,7 +80,7 @@ export default function ChatScreen() {
             const otherUserDoc = await safeGetDoc<any>(doc(db, 'users', otherUserId));
             if (otherUserDoc.exists && otherUserDoc.data) {
               setOtherUserName(otherUserDoc.data.displayName || 'User');
-              setOtherUserStatus(otherUserDoc.data.status || 'offline');
+              // Don't set status here - we'll use real-time subscription below
             }
           }
         }
@@ -111,6 +112,26 @@ export default function ChatScreen() {
 
     loadChatData();
   }, [chatId, user, connectionStatus]);
+
+  // Subscribe to other user's presence in real-time (for direct chats)
+  useEffect(() => {
+    if (!chatData || chatData.type !== 'direct' || !user) return;
+
+    const otherUserId = chatData.participants.find((id: string) => id !== user.uid);
+    if (!otherUserId) return;
+
+    console.log('👂 Subscribing to presence for user:', otherUserId);
+
+    const unsubscribe = subscribeToUserPresence(otherUserId, (status) => {
+      console.log(`👤 Other user status updated: ${status}`);
+      setOtherUserStatus(status);
+    });
+
+    return () => {
+      console.log('🧹 Unsubscribing from presence');
+      unsubscribe();
+    };
+  }, [chatData, user]);
 
   // Load messages from SQLite first (instant, no loading state)
   useEffect(() => {
@@ -465,7 +486,7 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* Connection Status Banner */}

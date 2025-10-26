@@ -255,6 +255,7 @@ export default function LoginScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isSubmitting}
+              keyboardType="default"
             />
           </View>
 

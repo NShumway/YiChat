@@ -12,6 +12,7 @@ import { requestNotificationPermissions, initializeNotificationChannels } from '
 import { useMessageNotifications } from '../hooks/useMessageNotifications';
 import { initMessageQueue } from '../services/messageQueue';
 import { initMessageSync } from '../services/messageSync';
+import { startPresenceHeartbeat, stopPresenceHeartbeat } from '../services/presence';
 
 // Set up notification handler
 Notifications.setNotificationHandler({
@@ -30,6 +31,7 @@ export default function RootLayout() {
   const notificationListener = useRef<Notifications.Subscription>();
   const responseListener = useRef<Notifications.Subscription>();
   const messageSyncCleanup = useRef<(() => void) | null>(null);
+  const presenceCleanup = useRef<(() => void) | null>(null);
 
   // Hook to show notifications for new messages
   useMessageNotifications();
@@ -115,7 +117,10 @@ export default function RootLayout() {
             
             // Initialize message sync system for this user
             setupMessageSync(firebaseUser.uid);
-            
+
+            // Start presence heartbeat
+            presenceCleanup.current = startPresenceHeartbeat(firebaseUser.uid);
+
             // Request notification permissions
             requestNotificationPermissions(firebaseUser.uid).catch(err => {
               console.warn('⚠️ Failed to set up notifications:', err);
@@ -134,7 +139,10 @@ export default function RootLayout() {
             
             // Initialize message sync system for this user
             setupMessageSync(firebaseUser.uid);
-            
+
+            // Start presence heartbeat
+            presenceCleanup.current = startPresenceHeartbeat(firebaseUser.uid);
+
             // Still try to request notification permissions
             requestNotificationPermissions(firebaseUser.uid).catch(err => {
               console.warn('⚠️ Failed to set up notifications:', err);
@@ -157,14 +165,21 @@ export default function RootLayout() {
         }
       } else {
         console.log('👤 No authenticated user, clearing state');
-        
+
         // Clean up message sync on logout
         if (messageSyncCleanup.current) {
           console.log('🧹 Cleaning up message sync (logout)');
           messageSyncCleanup.current();
           messageSyncCleanup.current = null;
         }
-        
+
+        // Clean up presence heartbeat on logout
+        if (presenceCleanup.current) {
+          console.log('🧹 Cleaning up presence heartbeat (logout)');
+          presenceCleanup.current();
+          presenceCleanup.current = null;
+        }
+
         setUser(null);
       }
       
@@ -197,10 +212,10 @@ export default function RootLayout() {
 
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, [router]);

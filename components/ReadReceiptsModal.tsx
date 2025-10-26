@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -30,12 +31,21 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
       try {
         // Fetch names for all participants except sender
         const participantsToFetch = participants.filter(uid => uid !== senderId);
+        console.log('📋 Fetching names for participants:', participantsToFetch);
+        console.log('📋 ReadBy object:', readBy);
 
         const infos = await Promise.all(
           participantsToFetch.map(async (uid) => {
             try {
+              console.log(`🔍 Fetching user document for: ${uid}`);
               const userDoc = await getDoc(doc(db, 'users', uid));
               const userData = userDoc.exists() ? userDoc.data() : null;
+
+              if (!userDoc.exists()) {
+                console.warn(`⚠️ User document not found for: ${uid}`);
+              } else {
+                console.log(`✅ Found user: ${userData?.displayName || 'no name'}`);
+              }
 
               return {
                 uid,
@@ -44,7 +54,7 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
                 readAt: readBy[uid],
               };
             } catch (error) {
-              console.error(`Failed to fetch user ${uid}:`, error);
+              console.error(`❌ Failed to fetch user ${uid}:`, error);
               return {
                 uid,
                 name: 'Unknown User',
@@ -110,11 +120,12 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
         activeOpacity={1}
         onPress={onClose}
       >
-        <TouchableOpacity
-          style={styles.modalContainer}
-          activeOpacity={1}
-          onPress={(e) => e.stopPropagation()}
-        >
+        <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+          <TouchableOpacity
+            style={styles.modalContainer}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Read Receipts</Text>
@@ -128,7 +139,10 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
               <ActivityIndicator size="large" color="#007AFF" />
             </View>
           ) : (
-            <ScrollView style={styles.scrollContainer}>
+            <ScrollView
+              style={styles.scrollContainer}
+              contentContainerStyle={styles.scrollContent}
+            >
               {/* Read By Section */}
               {readUsers.length > 0 && (
                 <View style={styles.section}>
@@ -173,7 +187,8 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
               )}
             </ScrollView>
           )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </SafeAreaView>
       </TouchableOpacity>
     </Modal>
   );
@@ -185,12 +200,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  safeArea: {
+    maxHeight: '75%',
+  },
   modalContainer: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '70%',
-    paddingBottom: 20,
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -219,6 +236,9 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   section: {
     paddingHorizontal: 20,

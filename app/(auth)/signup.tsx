@@ -300,6 +300,7 @@ export default function SignUpScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isSubmitting}
+              keyboardType="default"
             />
           </View>
 
@@ -316,6 +317,7 @@ export default function SignUpScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isSubmitting}
+              keyboardType="default"
             />
           </View>
 

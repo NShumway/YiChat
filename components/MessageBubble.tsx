@@ -123,19 +123,19 @@ export const MessageBubble = memo(
       const readByUserIds = Object.keys(message.readBy || {})
         .filter(uid => uid !== message.senderId);
 
+      // No one has read it yet - show nothing
       if (readByUserIds.length === 0) return null;
 
-      if (readByUserIds.length === 1) {
-        return `Read by ${readByNames[0] || 'someone'}`;
+      // Calculate total participants excluding sender
+      const totalParticipants = (chatParticipants || []).filter(uid => uid !== message.senderId).length;
+
+      // All participants have read it
+      if (readByUserIds.length === totalParticipants) {
+        return 'Read by all';
       }
 
-      if (readByUserIds.length === 2) {
-        return `Read by ${readByNames[0] || 'someone'} and ${readByNames[1] || 'someone'}`;
-      }
-
-      // More than 2 people
-      const othersCount = readByUserIds.length - 1;
-      return `Read by ${readByNames[0] || 'someone'} and ${othersCount} ${othersCount === 1 ? 'other' : 'others'}`;
+      // Some but not all have read it
+      return 'Read by some';
     };
 
     // System messages (group events)
