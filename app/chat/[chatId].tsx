@@ -10,6 +10,7 @@ import {
   Keyboard,
   KeyboardEvent,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
@@ -47,6 +48,8 @@ export default function ChatScreen() {
   const [isSending, setIsSending] = useState(false);
   const [othersTyping, setOthersTyping] = useState(false);
   const [chatData, setChatData] = useState<any>(null);
+  const [otherUserName, setOtherUserName] = useState<string>('');
+  const [otherUserStatus, setOtherUserStatus] = useState<'online' | 'offline'>('offline');
   const flashListRef = useRef<FlashList<Message>>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const currentScrollOffset = useRef<number>(0);
@@ -68,6 +71,18 @@ export default function ChatScreen() {
 
       if (exists && data) {
         setChatData({ id: chatId, ...data });
+
+        // For direct chats, fetch the other user's info
+        if (data.type === 'direct' && user) {
+          const otherUserId = data.participants.find((id: string) => id !== user.uid);
+          if (otherUserId) {
+            const otherUserDoc = await safeGetDoc<any>(doc(db, 'users', otherUserId));
+            if (otherUserDoc.exists && otherUserDoc.data) {
+              setOtherUserName(otherUserDoc.data.displayName || 'User');
+              setOtherUserStatus(otherUserDoc.data.status || 'offline');
+            }
+          }
+        }
 
         // Reset unread count for this user
         const currentUnreadCount = typeof data.unreadCount === 'object'
@@ -447,13 +462,14 @@ export default function ChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      {/* Connection Status Banner */}
-      <ConnectionBanner />
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {/* Connection Status Banner */}
+        <ConnectionBanner />
       
       {/* Header */}
       <View style={styles.header}>
@@ -461,14 +477,27 @@ export default function ChatScreen() {
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>
-            {chatData?.type === 'group' 
-              ? chatData?.name || 'Group Chat'
-              : 'Chat'}
-          </Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle}>
+              {chatData?.type === 'group'
+                ? chatData?.name || 'Group Chat'
+                : otherUserName || 'Chat'}
+            </Text>
+            {chatData?.type === 'direct' && otherUserName && (
+              <View style={[
+                styles.statusDot,
+                otherUserStatus === 'online' ? styles.statusOnline : styles.statusOffline
+              ]} />
+            )}
+          </View>
           {chatData?.type === 'group' && (
             <Text style={styles.participantCount}>
               {chatData?.participants?.length || 0} participants
+            </Text>
+          )}
+          {chatData?.type === 'direct' && (
+            <Text style={styles.participantCount}>
+              {otherUserStatus === 'online' ? 'Online' : 'Offline'}
             </Text>
           )}
           {connectionStatus !== 'online' && (
@@ -535,7 +564,8 @@ export default function ChatScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -543,6 +573,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -565,10 +598,26 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#1a1a1a',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  statusOnline: {
+    backgroundColor: '#4CAF50',
+  },
+  statusOffline: {
+    backgroundColor: '#999',
   },
   participantCount: {
     fontSize: 13,

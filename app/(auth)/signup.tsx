@@ -281,7 +281,8 @@ export default function SignUpScreen() {
               placeholder="At least 6 characters"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={true}
+              textContentType="password"
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isSubmitting}
@@ -296,7 +297,8 @@ export default function SignUpScreen() {
               placeholder="Re-enter password"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              secureTextEntry
+              secureTextEntry={true}
+              textContentType="password"
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isSubmitting}
