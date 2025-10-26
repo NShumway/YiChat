@@ -25,13 +25,14 @@ import {
   setDoc,
   deleteDoc,
   writeBatch,
-  getDoc,
 } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { dbOperations } from '../../services/database';
 import { useStore } from '../../store/useStore';
 import { Message } from '../../types/Message';
 import { MessageBubble } from '../../components/MessageBubble';
+import { ConnectionBanner } from '../../components/ConnectionBanner';
+import { safeGetDoc } from '../../services/firestoreHelpers';
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -52,31 +53,46 @@ export default function ChatScreen() {
     if (!chatId || !user) return;
 
     const loadChatData = async () => {
-      try {
-        const chatDoc = await getDoc(doc(db, 'chats', chatId));
-        if (chatDoc.exists()) {
-          setChatData({ id: chatDoc.id, ...chatDoc.data() });
-          
-          // Reset unread count for this user
-          const chatData = chatDoc.data();
-          const currentUnreadCount = typeof chatData.unreadCount === 'object' 
-            ? (chatData.unreadCount[user.uid] || 0)
-            : chatData.unreadCount;
-          
-          if (currentUnreadCount > 0) {
-            console.log(`📖 Resetting unread count for chat ${chatId}`);
+      // Skip if offline
+      if (connectionStatus === 'offline') {
+        console.log('⏭️ Skipping chat data load - offline');
+        return;
+      }
+
+      const { data, exists, isOfflineError } = await safeGetDoc<any>(
+        doc(db, 'chats', chatId)
+      );
+
+      if (exists && data) {
+        setChatData({ id: chatId, ...data });
+
+        // Reset unread count for this user
+        const currentUnreadCount = typeof data.unreadCount === 'object'
+          ? (data.unreadCount[user.uid] || 0)
+          : data.unreadCount;
+
+        if (currentUnreadCount > 0 && connectionStatus === 'online') {
+          console.log(`📖 Resetting unread count for chat ${chatId}`);
+          try {
             await updateDoc(doc(db, 'chats', chatId), {
               [`unreadCount.${user.uid}`]: 0
             });
+          } catch (error: any) {
+            // Silently fail if offline
+            if (!error?.message?.includes('offline')) {
+              console.error('❌ Error resetting unread count:', error);
+            }
           }
         }
-      } catch (error) {
-        console.error('❌ Error loading chat data:', error);
+      } else if (isOfflineError) {
+        console.log('📡 Chat data unavailable - offline');
+      } else {
+        console.warn('⚠️ Chat not found:', chatId);
       }
     };
 
     loadChatData();
-  }, [chatId, user]);
+  }, [chatId, user, connectionStatus]);
 
   // Load messages from SQLite first (instant, no loading state)
   useEffect(() => {
@@ -337,27 +353,29 @@ export default function ChatScreen() {
       // Don't update status yet - let Firestore listener handle it to avoid double-render
       dbOperations.updateMessageId(tempId, docRef.id);
 
-          // 7. Update chat's last message and increment unread count for other participants
-          const chatDoc = await getDoc(doc(db, 'chats', chatId));
-          if (chatDoc.exists()) {
-            const chatData = chatDoc.data();
-            const updates: any = {
-              lastMessage: text,
-              lastMessageTimestamp: Date.now(),
-            };
-            
-            // Increment unread count for all participants except sender
-            chatData.participants.forEach((participantId: string) => {
-              if (participantId !== user.uid) {
-                const currentCount = typeof chatData.unreadCount === 'object'
-                  ? (chatData.unreadCount[participantId] || 0)
-                  : 0;
-                updates[`unreadCount.${participantId}`] = currentCount + 1;
-              }
-            });
-            
-            await updateDoc(doc(db, 'chats', chatId), updates);
+      // 7. Update chat's last message and increment unread count for other participants
+      const { data: chatDocData, exists } = await safeGetDoc<any>(
+        doc(db, 'chats', chatId)
+      );
+
+      if (exists && chatDocData) {
+        const updates: any = {
+          lastMessage: text,
+          lastMessageTimestamp: Date.now(),
+        };
+
+        // Increment unread count for all participants except sender
+        chatDocData.participants.forEach((participantId: string) => {
+          if (participantId !== user.uid) {
+            const currentCount = typeof chatDocData.unreadCount === 'object'
+              ? (chatDocData.unreadCount[participantId] || 0)
+              : 0;
+            updates[`unreadCount.${participantId}`] = currentCount + 1;
           }
+        });
+
+        await updateDoc(doc(db, 'chats', chatId), updates);
+      }
 
       // Firestore listener will sync and update UI (avoids double-render)
     } catch (error) {
@@ -381,6 +399,9 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
+      {/* Connection Status Banner */}
+      <ConnectionBanner />
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>

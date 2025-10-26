@@ -14,19 +14,18 @@ import {
   collection,
   query,
   where,
-  getDocs,
   addDoc,
   serverTimestamp,
-  orderBy,
-  limit,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useStore } from '../store/useStore';
 import { User } from '../types/User';
+import { safeGetDocs } from '../services/firestoreHelpers';
 
 export default function NewChatScreen() {
   const router = useRouter();
   const currentUser = useStore((state) => state.user);
+  const connectionStatus = useStore((state) => state.connectionStatus);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -49,14 +48,25 @@ export default function NewChatScreen() {
   const searchUsers = async (query: string) => {
     if (!currentUser) return;
 
+    // Check if offline
+    if (connectionStatus === 'offline') {
+      Alert.alert('Offline', 'You need to be online to search for users.');
+      return;
+    }
+
     setIsSearching(true);
     try {
       const q = collection(db, 'users');
-      const querySnapshot = await getDocs(q);
+      const { data, isOfflineError } = await safeGetDocs<User>(q, []);
+
+      if (isOfflineError) {
+        Alert.alert('Offline', 'You need to be online to search for users.');
+        setSearchResults([]);
+        return;
+      }
 
       // Client-side filtering (Firestore doesn't support text search)
-      const results = querySnapshot.docs
-        .map((doc) => ({ ...doc.data(), uid: doc.id } as User))
+      const results = data
         .filter((user) => {
           if (user.uid === currentUser.uid) return false; // Exclude self
           const searchLower = query.toLowerCase();
@@ -79,26 +89,36 @@ export default function NewChatScreen() {
   const createOrOpenChat = async (recipientUser: User) => {
     if (!currentUser) return;
 
+    // Check if offline
+    if (connectionStatus === 'offline') {
+      Alert.alert('Offline', 'You need to be online to create a chat. Your messages will be queued once you start chatting.');
+      return;
+    }
+
     setIsCreatingChat(true);
     try {
       // Check if chat already exists
       console.log('🔍 Checking for existing chat with:', recipientUser.displayName);
-      
+
       const chatsRef = collection(db, 'chats');
       const q = query(
         chatsRef,
         where('participants', 'array-contains', currentUser.uid)
       );
-      
-      const querySnapshot = await getDocs(q);
-      
+
+      const { data, isOfflineError } = await safeGetDocs<any>(q, []);
+
+      if (isOfflineError) {
+        Alert.alert('Offline', 'You need to be online to create a chat.');
+        return;
+      }
+
       // Find existing direct chat with this user
-      const existingChat = querySnapshot.docs.find((doc) => {
-        const data = doc.data();
+      const existingChat = data.find((doc: any) => {
         return (
-          data.type === 'direct' &&
-          data.participants.includes(recipientUser.uid) &&
-          data.participants.length === 2
+          doc.type === 'direct' &&
+          doc.participants.includes(recipientUser.uid) &&
+          doc.participants.length === 2
         );
       });
 
@@ -124,13 +144,20 @@ export default function NewChatScreen() {
       });
 
       console.log('✅ Chat created:', newChatRef.id);
-      
+
       // Navigate to new chat
       router.back();
       router.push(`/chat/${newChatRef.id}` as any);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error creating chat:', error);
-      Alert.alert('Error', 'Failed to create chat. Please try again.');
+
+      // Check if it's an offline error
+      const isOffline = error?.message?.includes('offline') || error?.code === 'unavailable';
+      if (isOffline) {
+        Alert.alert('Offline', 'You need to be online to create a chat.');
+      } else {
+        Alert.alert('Error', 'Failed to create chat. Please try again.');
+      }
     } finally {
       setIsCreatingChat(false);
     }

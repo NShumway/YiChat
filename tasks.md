@@ -2477,12 +2477,710 @@ const translateText = async (text: string, targetLang: string, sourceLang: strin
 
 ---
 
-This completes the MVP user stories and sets up the first AI feature. The structure shows:
+---
 
-1. **Clear implementation details** with code examples
-2. **Leverages library strengths** (Firestore real-time, FlashList performance, etc.)
-3. **Specific acceptance criteria** that can be tested
-4. **Testing scenarios** where critical (offline sync, lifecycle handling)
-5. **Progressive complexity** from setup → core features → AI
+## 🎯 MVP STATUS: COMPLETE ✅
 
-Want me to continue with the remaining AI features (cultural context, formality adjustment, slang explanations, and smart replies)?
+**Completed Phases:**
+- ✅ Phase 0: Project Initialization
+- ✅ Phase 1: Authentication
+- ✅ Phase 2: Core Messaging Infrastructure
+
+**Next:** AI Features Implementation
+
+---
+
+## Phase 3 Prerequisites: Infrastructure for AI
+
+Before implementing AI features, complete these foundational tasks:
+
+### US-3.0.1: Add Nationality Field to User Signup ⚠️ REQUIRED FOR AI
+**As a** user
+**I want** to select my nationality during signup
+**So that** AI can provide culturally relevant context
+
+**Why This Comes First:**
+- Required for all AI cultural context features
+- Simple database schema change
+- No AI dependencies yet
+
+**Implementation:**
+
+1. **Update User Type** (`types/User.ts`):
+```typescript
+export interface User {
+  uid: string;
+  displayName: string;
+  email: string;
+  preferredLanguage: string;
+  nationality: string; // NEW - e.g., "American", "Mexican", "Japanese"
+  photoURL?: string;
+  status: 'online' | 'offline';
+  lastSeen: Date;
+  relationships?: { [userId: string]: string }; // NEW - per-contact labels
+  createdAt: Date;
+}
+```
+
+2. **Update Signup Screen** (`app/(auth)/signup.tsx`):
+```typescript
+const [nationality, setNationality] = useState('');
+
+// Common nationalities list
+const COMMON_NATIONALITIES = [
+  'American', 'Mexican', 'Canadian', 'British', 'Australian',
+  'Chinese', 'Japanese', 'Korean', 'Indian', 'French',
+  'German', 'Spanish', 'Italian', 'Brazilian', 'Russian',
+  'Saudi Arabian', 'Other'
+];
+
+// Add to form UI
+<Picker
+  selectedValue={nationality}
+  onValueChange={(value) => setNationality(value)}
+>
+  {COMMON_NATIONALITIES.map((nat) => (
+    <Picker.Item key={nat} label={nat} value={nat} />
+  ))}
+</Picker>
+
+// Update signup function
+await setDoc(doc(db, 'users', userCredential.user.uid), {
+  uid: userCredential.user.uid,
+  displayName,
+  email,
+  preferredLanguage,
+  nationality, // NEW
+  status: 'online',
+  createdAt: new Date(),
+});
+```
+
+3. **Update Firestore Security Rules** (`firestore.rules`):
+```javascript
+match /users/{userId} {
+  allow read: if isAuthenticated();
+  allow create: if isOwner(userId) &&
+    request.resource.data.nationality is string;
+  allow update: if isOwner(userId);
+}
+```
+
+**Acceptance Criteria:**
+- ✅ Signup form includes nationality picker
+- ✅ Nationality saved to Firestore on signup
+- ✅ Existing users can update nationality in profile
+- ✅ Security rules validate nationality field
+
+**Testing:**
+- Create new account, select "Mexican", verify in Firestore
+- Update existing user profile, verify nationality updates
+
+---
+
+### US-3.0.2: Set Up EAS Build for Native Features ⚠️ CRITICAL
+**As a** developer
+**I want** to use EAS Build instead of Expo Go
+**So that** I can properly test push notifications and app lifecycle
+
+**Why This Comes First:**
+- Expo Go can't test background notifications
+- EAS Build is deployment strategy going forward
+- Free for development (no Apple license needed)
+
+**Implementation:**
+
+1. **Install EAS CLI:**
+```bash
+npm install -g eas-cli
+eas login
+```
+
+2. **Configure EAS** (run in project root):
+```bash
+eas build:configure
+```
+
+This creates `eas.json`:
+```json
+{
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Debug"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "ios": {
+        "simulator": false
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}
+```
+
+3. **Build Development Versions:**
+
+**Android (easy, no setup):**
+```bash
+eas build --profile development --platform android
+```
+
+Wait 5-10 minutes, download APK from link, install on device.
+
+**iOS (requires free Apple ID):**
+```bash
+eas build --profile development --platform ios
+```
+
+First time: EAS will prompt for Apple ID, create certificates automatically.
+
+4. **Install and Run:**
+```bash
+# Start dev server
+npm start
+
+# Development build on device will auto-connect
+```
+
+**CRITICAL NOTES:**
+- Development builds have full native features (push notifications, background sync)
+- Still use Expo Go for quick UI iteration
+- Build once, use for weeks (only rebuild when native deps change)
+- Free Apple ID works (no $99 license needed)
+
+**Acceptance Criteria:**
+- ✅ EAS Build configured
+- ✅ Android APK builds successfully
+- ✅ iOS development build created
+- ✅ Can install and run on real devices
+- ✅ Push notifications work (will test later)
+
+**Troubleshooting:**
+- If iOS build fails: Check Apple ID credentials
+- If Android build fails: Check `app.json` has correct package name
+- Build takes forever: Normal, first build is slow (5-15 min)
+
+---
+
+### US-3.0.3: Implement AI Request Rate Limiting ⚠️ CRITICAL
+**As a** developer
+**I want** to limit AI API calls to prevent runaway costs
+**So that** I don't accidentally spend hundreds of dollars during testing
+
+**Why This Comes First:**
+- Protects against infinite loops or bugs that spam AI
+- MUST be in place before any AI testing
+- Cheap to implement, saves potential disaster
+
+**Implementation:**
+
+Create `functions/src/rateLimiting.ts`:
+```typescript
+import * as admin from 'firebase/admin';
+
+// Rate limits per user
+const RATE_LIMITS = {
+  translation: {
+    maxPerMinute: 30,
+    maxPerHour: 200,
+    maxPerDay: 1000,
+  },
+  aiConversation: {
+    maxPerMinute: 10,
+    maxPerHour: 50,
+    maxPerDay: 200,
+  },
+  smartReplies: {
+    maxPerMinute: 5,
+    maxPerHour: 30,
+    maxPerDay: 100,
+  },
+};
+
+interface RateLimitCheck {
+  allowed: boolean;
+  remaining: number;
+  resetAt: number;
+}
+
+export async function checkRateLimit(
+  userId: string,
+  feature: keyof typeof RATE_LIMITS
+): Promise<RateLimitCheck> {
+  const db = admin.firestore();
+  const now = Date.now();
+
+  const rateLimitDoc = db
+    .collection('rateLimits')
+    .doc(`${userId}_${feature}`);
+
+  const doc = await rateLimitDoc.get();
+  const data = doc.data() || {
+    minuteCount: 0,
+    hourCount: 0,
+    dayCount: 0,
+    minuteResetAt: now + 60000,
+    hourResetAt: now + 3600000,
+    dayResetAt: now + 86400000,
+  };
+
+  // Reset counts if time windows expired
+  if (now > data.minuteResetAt) {
+    data.minuteCount = 0;
+    data.minuteResetAt = now + 60000;
+  }
+  if (now > data.hourResetAt) {
+    data.hourCount = 0;
+    data.hourResetAt = now + 3600000;
+  }
+  if (now > data.dayResetAt) {
+    data.dayCount = 0;
+    data.dayResetAt = now + 86400000;
+  }
+
+  const limits = RATE_LIMITS[feature];
+
+  // Check if any limit exceeded
+  if (data.minuteCount >= limits.maxPerMinute) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: data.minuteResetAt,
+    };
+  }
+  if (data.hourCount >= limits.maxPerHour) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: data.hourResetAt,
+    };
+  }
+  if (data.dayCount >= limits.maxPerDay) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: data.dayResetAt,
+    };
+  }
+
+  // Increment counts
+  data.minuteCount++;
+  data.hourCount++;
+  data.dayCount++;
+
+  await rateLimitDoc.set(data);
+
+  return {
+    allowed: true,
+    remaining: Math.min(
+      limits.maxPerMinute - data.minuteCount,
+      limits.maxPerHour - data.hourCount,
+      limits.maxPerDay - data.dayCount
+    ),
+    resetAt: Math.min(
+      data.minuteResetAt,
+      data.hourResetAt,
+      data.dayResetAt
+    ),
+  };
+}
+
+// Use in Cloud Functions
+export async function rateLimitMiddleware(
+  context: functions.https.CallableContext,
+  feature: keyof typeof RATE_LIMITS
+) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'User must be logged in'
+    );
+  }
+
+  const check = await checkRateLimit(context.auth.uid, feature);
+
+  if (!check.allowed) {
+    const waitMinutes = Math.ceil((check.resetAt - Date.now()) / 60000);
+    throw new functions.https.HttpsError(
+      'resource-exhausted',
+      `Rate limit exceeded. Try again in ${waitMinutes} minute(s).`
+    );
+  }
+
+  return check;
+}
+```
+
+**Update Cloud Functions to use rate limiting:**
+```typescript
+// In functions/src/index.ts
+import { rateLimitMiddleware } from './rateLimiting';
+
+export const translateMessage = functions.https.onCall(async (data, context) => {
+  // Check rate limit FIRST
+  await rateLimitMiddleware(context, 'translation');
+
+  // Then proceed with translation...
+  const { text, targetLanguage, sourceLanguage } = data;
+  // ... existing translation code
+});
+```
+
+**Client-Side Handling:**
+```typescript
+// In services/ai.ts
+try {
+  const result = await translateMessage({ text, targetLanguage, sourceLanguage });
+  return result.data;
+} catch (error: any) {
+  if (error.code === 'resource-exhausted') {
+    Alert.alert(
+      'Rate Limit Exceeded',
+      error.message || 'Too many requests. Please wait a moment.'
+    );
+    return null;
+  }
+  throw error;
+}
+```
+
+**Acceptance Criteria:**
+- ✅ Rate limits configured for all AI features
+- ✅ Limits enforced in Cloud Functions
+- ✅ User-friendly error messages
+- ✅ Limits reset correctly after time window
+- ✅ Different limits for different features
+
+**Testing:**
+- Make 31 translation calls in 1 minute, verify 31st fails
+- Wait 1 minute, verify can call again
+- Check Firestore `rateLimits` collection for count tracking
+
+**CRITICAL:**
+- Deploy this BEFORE testing any AI features
+- Monitor Firestore `rateLimits` collection
+- Adjust limits as needed (start conservative)
+
+**Cost Protection:**
+- With these limits, max cost per user per day:
+  - Translations: 1000 calls × $0.002 = $2.00
+  - AI conversations: 200 calls × $0.01 = $2.00
+  - Smart replies: 100 calls × $0.02 = $2.00
+  - **Total max daily cost per user: ~$6** (vs unlimited $$$)
+
+---
+
+## Phase 3: AI Features Implementation
+
+Now that infrastructure is ready, implement AI features in this order:
+
+### US-3.2: Install and Configure Vercel AI SDK
+**As a** developer
+**I want** to set up Vercel AI SDK for agent-based AI
+**So that** I can build smart replies and conversational AI
+
+**Implementation:**
+
+1. **Install Vercel AI SDK** (in `/functions` directory):
+```bash
+cd functions
+npm install ai
+```
+
+2. **Update Cloud Function for streaming** (`functions/src/aiConversation.ts`):
+```typescript
+import { streamText } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import * as functions from 'firebase-functions';
+
+export const aiChatStream = functions.https.onRequest(async (req, res) => {
+  // Verify authentication (check token in header)
+  const token = req.headers.authorization?.split('Bearer ')[1];
+  if (!token) {
+    res.status(401).send('Unauthorized');
+    return;
+  }
+
+  // Verify Firebase token
+  const admin = await import('firebase-admin');
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    const userId = decodedToken.uid;
+
+    // Check rate limit
+    const check = await checkRateLimit(userId, 'aiConversation');
+    if (!check.allowed) {
+      res.status(429).send('Rate limit exceeded');
+      return;
+    }
+
+    const { messages, context } = req.body;
+
+    // Stream AI response
+    const result = await streamText({
+      model: openai('gpt-4-turbo'),
+      messages,
+      temperature: 0.7,
+      maxTokens: 500,
+    });
+
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Stream chunks to client
+    for await (const chunk of result.textStream) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    }
+
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+  } catch (error) {
+    console.error('AI chat error:', error);
+    res.status(500).send('Internal error');
+  }
+});
+```
+
+3. **Client-side streaming handler** (`services/ai.ts`):
+```typescript
+export async function streamAIChat(
+  messages: Message[],
+  context: ConversationContext,
+  onChunk: (text: string) => void,
+  onComplete: () => void
+) {
+  const auth = getAuth();
+  const token = await auth.currentUser?.getIdToken();
+
+  const response = await fetch(
+    'https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net/aiChatStream',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ messages, context }),
+    }
+  );
+
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader!.read();
+    if (done) {
+      onComplete();
+      break;
+    }
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') {
+          onComplete();
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          onChunk(parsed.text);
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    }
+  }
+}
+```
+
+**Acceptance Criteria:**
+- ✅ Vercel AI SDK installed in functions
+- ✅ Streaming endpoint deployed
+- ✅ Client can receive streamed responses
+- ✅ Authentication enforced
+- ✅ Rate limiting applied
+
+**Testing:**
+- Call streaming endpoint, verify chunks arrive progressively
+- Monitor network tab, verify SSE (Server-Sent Events) format
+
+---
+
+### US-3.3: Set Up Pinecone Vector Database for RAG
+**As a** developer
+**I want** to store conversation embeddings in Pinecone
+**So that** AI can retrieve relevant context for smart replies
+
+**Implementation:**
+
+1. **Create Pinecone Account:**
+- Go to https://www.pinecone.io/
+- Sign up (free tier: 1 index, 5M vectors)
+- Create API key
+
+2. **Create Index:**
+```bash
+# In Pinecone console, create index:
+# Name: yichat-conversations
+# Dimensions: 1536 (OpenAI embedding size)
+# Metric: cosine
+# Environment: us-east-1-aws (or closest region)
+```
+
+3. **Install Pinecone in Cloud Functions:**
+```bash
+cd functions
+npm install @pinecone-database/pinecone
+```
+
+4. **Configure Pinecone** (`functions/src/pinecone.ts`):
+```typescript
+import { Pinecone } from '@pinecone-database/pinecone';
+import { functions } from 'firebase-functions';
+
+const pinecone = new Pinecone({
+  apiKey: functions.config().pinecone.key,
+});
+
+const index = pinecone.index('yichat-conversations');
+
+export { pinecone, index };
+```
+
+5. **Add embeddings to messages** (`functions/src/embeddings.ts`):
+```typescript
+import OpenAI from 'openai';
+import { index } from './pinecone';
+
+const openai = new OpenAI({
+  apiKey: functions.config().openai.key,
+});
+
+export async function embedMessage(
+  messageId: string,
+  chatId: string,
+  userId: string,
+  text: string,
+  timestamp: number
+) {
+  // Generate embedding
+  const embedding = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: text,
+  });
+
+  // Store in Pinecone
+  await index.upsert([{
+    id: messageId,
+    values: embedding.data[0].embedding,
+    metadata: {
+      chatId,
+      userId,
+      text,
+      timestamp,
+    },
+  }]);
+}
+
+export async function queryConversationContext(
+  chatId: string,
+  queryText: string,
+  topK: number = 20
+) {
+  // Generate query embedding
+  const embedding = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: queryText,
+  });
+
+  // Query Pinecone
+  const results = await index.query({
+    vector: embedding.data[0].embedding,
+    topK,
+    filter: { chatId: { $eq: chatId } },
+    includeMetadata: true,
+  });
+
+  // Return most relevant messages
+  return results.matches.map(match => ({
+    text: match.metadata?.text as string,
+    timestamp: match.metadata?.timestamp as number,
+    score: match.score,
+  }));
+}
+```
+
+6. **Integrate with message sending:**
+```typescript
+// In your message creation Cloud Function or trigger
+export const onMessageCreated = functions.firestore
+  .document('messages/{messageId}')
+  .onCreate(async (snap, context) => {
+    const message = snap.data();
+
+    // Embed message for future RAG queries
+    await embedMessage(
+      context.params.messageId,
+      message.chatId,
+      message.senderId,
+      message.text,
+      message.timestamp
+    );
+  });
+```
+
+**Set Pinecone Config:**
+```bash
+firebase functions:config:set pinecone.key="YOUR_PINECONE_API_KEY"
+firebase functions:config:set pinecone.environment="us-east-1-aws"
+```
+
+**Acceptance Criteria:**
+- ✅ Pinecone index created
+- ✅ Messages automatically embedded on creation
+- ✅ Can query for relevant context
+- ✅ Top K relevant messages returned
+- ✅ Results filtered by chatId
+
+**Testing:**
+- Send 20 messages in a chat
+- Query for "what did we talk about food?"
+- Verify returns relevant messages about food
+
+**Performance Note:**
+- OpenAI embedding: ~50ms
+- Pinecone upsert: ~100ms
+- Query: ~200ms
+- Total RAG overhead: ~350ms (acceptable)
+
+---
+
+*[Continuing with remaining user stories in next message due to length...]
+
+---

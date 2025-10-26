@@ -78,3 +78,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Project requirements and documentation
+*.pdf
+MessageAI Project Requirements.pdf

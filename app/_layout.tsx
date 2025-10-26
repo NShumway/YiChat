@@ -10,6 +10,8 @@ import { initDatabase } from '../services/database';
 import { useStore } from '../store/useStore';
 import { requestNotificationPermissions } from '../services/notifications';
 import { useMessageNotifications } from '../hooks/useMessageNotifications';
+import { initMessageQueue } from '../services/messageQueue';
+import { initMessageSync } from '../services/messageSync';
 
 // Set up notification handler
 Notifications.setNotificationHandler({
@@ -27,9 +29,28 @@ export default function RootLayout() {
   const router = useRouter();
   const notificationListener = useRef<Notifications.Subscription>();
   const responseListener = useRef<Notifications.Subscription>();
+  const messageSyncCleanup = useRef<(() => void) | null>(null);
 
   // Hook to show notifications for new messages
   useMessageNotifications();
+
+  // Helper function to initialize message sync (prevents duplicate calls)
+  const setupMessageSync = (userId: string) => {
+    // Clean up previous sync if exists
+    if (messageSyncCleanup.current) {
+      console.log('🧹 Cleaning up previous message sync');
+      messageSyncCleanup.current();
+      messageSyncCleanup.current = null;
+    }
+    
+    // Initialize and store cleanup function
+    try {
+      messageSyncCleanup.current = initMessageSync(userId);
+      console.log('✅ Message sync initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize message sync:', error);
+    }
+  };
 
   useEffect(() => {
     // Initialize SQLite database on app launch
@@ -38,6 +59,14 @@ export default function RootLayout() {
       console.log('✅ SQLite database initialized');
     } catch (error) {
       console.error('❌ Failed to initialize database:', error);
+    }
+
+    // Initialize message queue system
+    try {
+      initMessageQueue();
+      console.log('✅ Message queue initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize message queue:', error);
     }
 
     // Set up Firebase auth state listener
@@ -77,6 +106,9 @@ export default function RootLayout() {
             });
             console.log('✅ User data loaded from Firestore');
             
+            // Initialize message sync system for this user
+            setupMessageSync(firebaseUser.uid);
+            
             // Request notification permissions
             requestNotificationPermissions(firebaseUser.uid).catch(err => {
               console.warn('⚠️ Failed to set up notifications:', err);
@@ -92,6 +124,9 @@ export default function RootLayout() {
               status: 'online',
               photoURL: firebaseUser.photoURL,
             });
+            
+            // Initialize message sync system for this user
+            setupMessageSync(firebaseUser.uid);
             
             // Still try to request notification permissions
             requestNotificationPermissions(firebaseUser.uid).catch(err => {
@@ -115,6 +150,14 @@ export default function RootLayout() {
         }
       } else {
         console.log('👤 No authenticated user, clearing state');
+        
+        // Clean up message sync on logout
+        if (messageSyncCleanup.current) {
+          console.log('🧹 Cleaning up message sync (logout)');
+          messageSyncCleanup.current();
+          messageSyncCleanup.current = null;
+        }
+        
         setUser(null);
       }
       

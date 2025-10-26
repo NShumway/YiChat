@@ -7,6 +7,7 @@ import { auth, db } from '../../services/firebase';
 import { useStore } from '../../store/useStore';
 import { Chat } from '../../types/Message';
 import { ChatListItem } from '../../components/ChatListItem';
+import { ConnectionBanner } from '../../components/ConnectionBanner';
 
 export default function ChatsScreen() {
   const router = useRouter();
@@ -114,6 +115,9 @@ export default function ChatsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Connection Status Banner */}
+      <ConnectionBanner />
+      
       {/* User Profile Section */}
       <View style={styles.profileSection}>
         <View style={styles.avatar}>

@@ -9,6 +9,8 @@ YiChat is a messaging app designed for people communicating across language barr
 
 **Core Value Proposition:** Chat naturally in your language while recipients read in theirs—no copy-paste, no switching apps, no awkward translations.
 
+**Development Status:** MVP messaging infrastructure complete. Now implementing AI features.
+
 ---
 
 ## Target Users: International Communicators
@@ -35,6 +37,7 @@ YiChat is a messaging app designed for people communicating across language barr
 1. **Email/Password** - Traditional account creation ✅ IMPLEMENTED
    - Display name input
    - Preferred language selection (12 languages supported)
+   - Nationality selection (for AI cultural context)
    - Email verification (optional)
    
 2. **Google Sign-In (OAuth 2.0)** - One-tap authentication ⚠️ NOT IN MVP
@@ -97,20 +100,21 @@ YiChat is a messaging app designed for people communicating across language barr
 
 ---
 
-## Required AI Features (All 5)
+## Required AI Features (All 5 + Conversational Context Menu)
 
 ### 1. Real-Time Translation (Inline)
 **User Flow:**
 - User sends message in Spanish: "¿Cómo estás?"
 - Recipient (English speaker) sees: "How are you?" with small "Translated from Spanish" indicator
 - Tap translation to see original text
+- All messages auto-translate based on recipient's preferred language
 
 **Technical:**
-- Detect language on send (client-side or Cloud Function)
+- Detect language on send via Cloud Function
 - Store original + translated versions in Firestore
 - Each user's app shows messages in their preferred language
 - Cache translations to reduce API calls
-- **Target:** <500ms translation time for short messages
+- **Target:** <2s for short messages (<50 words), <3s for long messages (50-200 words)
 
 ### 2. Language Detection & Auto-Translate
 **User Flow:**
@@ -158,6 +162,67 @@ YiChat is a messaging app designed for people communicating across language barr
 - Provides simple explanation + region/register context
 - Store common explanations for caching
 - **UI:** Tooltip or bottom sheet
+- **Target:** <2s response time
+
+### 6. AI Conversational Context Menu (NEW)
+**User Flow:**
+- User long-presses any message
+- Context menu appears with AI options
+- Select "Ask AI About This" → Opens minimizable chat overlay
+- User can ask follow-up questions:
+  - "Tell me more about this cultural reference"
+  - "Explain this idiom further"
+  - "What's the history behind this phrase?"
+  - "Is this appropriate for my relationship with them?"
+- AI has full conversation context + relationship context
+- Chat overlay can be minimized to bottom-right bubble or maximized to full screen
+
+**Technical:**
+- Component: Press-and-hold gesture handler on messages
+- AI chat overlay: Minimizable/maximizable modal
+- Cloud Function: `aiConversation` (stateful, multi-turn)
+- Maintains conversation history within the AI chat session
+- Access to full message history for context
+- **Target:** <2s per AI response
+- **UI:** Non-intrusive, doesn't take permanent screen real estate
+
+---
+
+## Relationship Context Feature (NEW)
+
+**Purpose:** Provide AI with relationship context for better cultural recommendations and formality suggestions.
+
+**User Flow:**
+- User can optionally set a relationship label for each contact
+- Examples: "father-in-law", "best friend", "boss", "colleague"
+- Set in contact profile or chat settings
+- Relationship applies to direct messages AND group chats with that person
+- AI uses this context for:
+  - Cultural tips (e.g., "In Mexican culture, bringing a gift to family gatherings is customary")
+  - Formality suggestions (but conversation context takes priority)
+  - Appropriate response generation
+
+**Technical:**
+```typescript
+// In User document
+relationships: {
+  [contactUserId]: string  // e.g., "father-in-law", "best friend", "boss"
+}
+```
+
+**AI Integration:**
+- Relationship included in system prompt when available
+- AI prioritizes conversation context over relationship setting
+  - Example: Even if relationship is "boss" (formal), if messages are casual, AI stays casual
+- Used for cultural context recommendations
+  - Example: "Your father-in-law is Mexican (from their profile). In Mexican culture..."
+- If relationship text is nonsensical (e.g., "asdlfjadkl"), AI ignores it
+
+**Data Sources for Cultural Context:**
+- Contact's nationality (from their user profile)
+- User's nationality (from their user profile)
+- Relationship label (user-defined)
+- Conversation history and tone
 
 ---
 
@@ -173,8 +238,8 @@ YiChat is a messaging app designed for people communicating across language barr
 - RAG pipeline: Fetch last 20 messages for context
 - User preference storage: Track reply patterns, emoji frequency, formality
 - Generate replies using GPT-4 with user style profile
-- **Target:** <3s generation time
-- AI SDK by Vercel for agent framework
+- Vercel AI SDK for agent framework with tool calling
+- **Target:** <4s generation time for 3 options
 
 **Example:**
 - Friend (Spanish): "¿Vamos al cine mañana?" (Want to go to the movies tomorrow?)
@@ -217,9 +282,10 @@ YiChat is a messaging app designed for people communicating across language barr
 ### AI Stack
 ```
 ├── OpenAI GPT-4 Turbo (translation, context, smart replies)
-├── AI SDK by Vercel (agent framework for smart replies)
-├── Vector Store (Pinecone/Chroma) for RAG pipeline
-└── Function Calling (structured data extraction)
+├── Vercel AI SDK (agent framework with tool calling)
+├── Pinecone (vector database for RAG pipeline)
+├── OpenAI text-embedding-3-small (conversation embeddings)
+└── Function Calling (structured data extraction, tool use)
 ```
 
 ### Data Models
@@ -230,10 +296,12 @@ YiChat is a messaging app designed for people communicating across language barr
   uid: string,
   displayName: string,
   photoURL: string,
-  preferredLanguage: string, // ISO 639-1 code
+  preferredLanguage: string, // ISO 639-1 code (e.g., "en", "es")
+  nationality: string, // e.g., "American", "Mexican", "Japanese"
   email: string,
   status: 'online' | 'offline',
   lastSeen: timestamp,
+  relationships: { [contactUserId]: string }, // e.g., { "uid123": "father-in-law" }
   createdAt: timestamp
 }
 ```
@@ -308,77 +376,144 @@ YiChat is a messaging app designed for people communicating across language barr
 
 ## Performance Targets
 
-| Metric | Target | Architecture Requirement |
-|--------|--------|-------------------------|
-| Message delivery | <200ms | WebSocket with optimistic UI |
-| App launch to chat screen | <2s | SQLite cache, lazy loading |
-| Scroll 1000+ messages | 60 FPS | FlashList with memoization |
-| Offline sync after reconnect | <1s | Delta sync with lastSyncTimestamp |
-| Translation (short message) | <500ms | Cloud Functions with caching |
-| Smart reply generation | <3s | Streaming responses, preload context |
-| Image load (progressive) | <1s first pixel | Progressive JPEG, CDN caching |
-| Battery drain (background) | <2% per hour | Detach listeners after 5 min |
-| Network resilience | Works on 3G (100kbps) | Exponential backoff, compression |
-| Group read receipts (50 users) | <1s update | Map structure, not array |
-| Sync after 1-hour offline | <2s for 100 messages | Parallel delta queries |
+| Metric | Target | Max Acceptable | Architecture Requirement |
+|--------|--------|----------------|-------------------------|
+| Message delivery | <200ms | <500ms | WebSocket with optimistic UI |
+| App launch to chat screen | <2s | <3s | SQLite cache, lazy loading |
+| Scroll 1000+ messages | 60 FPS | 55 FPS | FlashList with memoization |
+| Offline sync after reconnect | <1s | <2s | Delta sync with lastSyncTimestamp |
+| **AI Features:** | | | |
+| Translation (short <50 words) | <1s | <2s | Cloud Functions with caching |
+| Translation (long 50-200 words) | <2s | <3s | Streaming, parallel processing |
+| Language detection | <500ms | <1s | GPT-4 with low token count |
+| Cultural context | <1.5s | <3s | Cached common phrases |
+| Formality adjustment | <1.5s | <3s | Single API call |
+| Slang explanation | <1s | <2s | Cached common slang |
+| Smart replies (3 options) | <2s | <4s | Streaming, RAG pipeline |
+| AI context menu chat | <2s per msg | <4s | Stateful conversation |
+| **Other:** | | | |
+| Image load (progressive) | <1s first pixel | <2s | Progressive JPEG, CDN caching |
+| Battery drain (background) | <2% per hour | <3% | Detach listeners after 5 min |
+| Network resilience | Works on 3G (100kbps) | Works on 2G | Exponential backoff, compression |
+| Group read receipts (50 users) | <1s update | <2s | Map structure, not array |
+| Sync after 1-hour offline | <2s for 100 messages | <4s | Parallel delta queries |
 
 ---
 
-## MVP Checklist (24 Hours)
+## MVP Status - ✅ COMPLETE
 
-### Core Messaging Features
+### Core Messaging Features ✅
 - [x] User authentication (Firebase Auth - Email/Password)
 - [x] Auth state persistence (stay logged in)
 - [x] User profiles with language preference
 - [x] Logout with status update
-- [ ] Google Sign-In (deferred to production builds)
-- [ ] One-on-one chat with real-time delivery
-- [ ] Message persistence (SQLite)
-- [ ] Optimistic UI updates
-- [ ] Online/offline indicators
-- [ ] Timestamps and read receipts
-- [ ] Basic group chat (3+ users)
-- [ ] Push notifications (foreground working)
-- [ ] Local emulator deployment
+- [x] One-on-one chat with real-time delivery
+- [x] Message persistence (SQLite)
+- [x] Optimistic UI updates
+- [x] Online/offline indicators
+- [x] Connection status banner
+- [x] Timestamps and read receipts
+- [x] Group chat (3+ users)
+- [x] Push notifications (foreground)
+- [x] Offline message queuing
+- [x] App lifecycle handling (background/foreground sync)
 
-### Architecture Foundations (For Future Scale)
-- [ ] Battery-efficient listener management (detach in background)
-- [ ] Exponential backoff for failed requests
-- [ ] Firestore security rules deployed
-- [ ] Delta sync with lastSyncTimestamp tracking
-- [ ] Scalable read receipt data model (map, not array)
-- [ ] Typing indicator throttling (2s max)
-- [ ] Connection state management with retry logic
+### Architecture Foundations ✅
+- [x] Battery-efficient listener management
+- [x] Exponential backoff for failed requests (1s, 2s, 5s, 10s, 30s)
+- [x] Firestore security rules deployed
+- [x] Delta sync with lastSyncTimestamp tracking
+- [x] Scalable read receipt data model (map structure)
+- [x] Typing indicator throttling (2s max)
+- [x] Connection state management with retry logic
+- [x] Message deduplication (INSERT OR REPLACE)
+- [x] 60 FPS scrolling (FlashList)
 
-**AI Not Required for MVP** - Focus on messaging infrastructure first
+**Next Phase:** AI Features Implementation
 
 ---
 
-## Final Submission Requirements
+## Project Requirements Checklist
 
-### Core Messaging ✓
-- [ ] Sub-200ms delivery on good network
-- [ ] Offline queuing + auto-sync
-- [ ] Group chat with 3+ users, smooth performance
-- [ ] App lifecycle handling (background/foreground/force quit)
-- [ ] 60 FPS scrolling through 1000+ messages
+### Core Messaging ✅
+- [x] Sub-200ms delivery on good network
+- [x] Offline queuing + auto-sync
+- [x] Group chat with 3+ users, smooth performance
+- [x] App lifecycle handling (background/foreground/force quit)
+- [x] 60 FPS scrolling through 1000+ messages
+- [x] Message persistence (force quit recovery)
+- [x] Typing indicators and read receipts
+- [x] Online/offline presence
 
-### AI Features (All 5)
-- [ ] Real-time inline translation
+### AI Features (6 Features)
+- [ ] Real-time inline translation (auto-translate all messages)
 - [ ] Auto language detection
 - [ ] Cultural context hints
 - [ ] Formality adjustment tool
 - [ ] Slang/idiom explanations
+- [ ] AI conversational context menu (ask follow-up questions)
 
-### Advanced AI
-- [ ] Context-aware smart replies (3 options, <3s generation)
+### Advanced AI Capability
+- [ ] Context-aware smart replies (3 options, learns user style)
 
-### Deliverables
-- [ ] GitHub repo with README
-- [ ] 5-7 min demo video (2 devices, all features)
-- [ ] Expo Go deployment link
-- [ ] 1-page document explaining user needs and technical decisions
-- [ ] Social media post tagging @GauntletAI
+### Supporting AI Features
+- [ ] Relationship context (per-contact labels)
+- [ ] Nationality in user profiles
+- [ ] RAG pipeline for conversation history
+- [ ] Function calling/tool use
+- [ ] AI request rate limiting
+- [ ] Response streaming for long operations
+
+### Architecture & Security
+- [x] Clean, well-organized code
+- [ ] API keys secured (Cloud Functions only, never in client)
+- [ ] Function calling/tool use implemented
+- [ ] RAG pipeline for conversation context
+- [ ] Rate limiting implemented
+- [ ] Response streaming (where applicable)
+
+### Deployment & Documentation
+- [x] README with setup instructions
+- [x] Environment variables template (.env.example)
+- [ ] Architecture diagrams
+- [ ] EAS Build deployment (Android APK + iOS dev builds)
+- [ ] Works on real devices
+- [ ] Fast and reliable
+
+### Final Deliverables
+- [ ] Demo video (2 devices, all features)
+- [ ] Documentation explaining technical decisions
+- [ ] Production-ready builds
+
+---
+
+## Deployment Strategy
+
+### Development (Current)
+- **Platform:** EAS Build (free Apple ID for iOS)
+- **Android:** Development APK (full features)
+- **iOS:** Development build (full features, no App Store submission)
+- **Testing:** Real devices + simulators
+- **Deployment:** `eas build --profile development`
+
+### Distribution
+- Android APK shareable directly (no Play Store needed)
+- iOS ad-hoc builds (up to 100 test devices)
+- No paid Apple Developer license required until App Store submission
+
+### Production (Future)
+- Android: Google Play Store ($25 one-time fee)
+- iOS: App Store ($99/year Apple Developer Program)
+
+---
+
+## Future Features (Low Priority)
+- [ ] Link unfurling (rich media previews)
+- [ ] Voice messages
+- [ ] Video calls
+- [ ] End-to-end encryption
+- [ ] Message search
+- [ ] Chat archiving
 
 ---
 

@@ -316,6 +316,30 @@ export const dbOperations = {
     database.runSync('DELETE FROM pending_messages WHERE id = ?', [messageId]);
   },
 
+  getFailedMessages: (): Message[] => {
+    if (isWebPlatform) {
+      return webStorage.messages.filter(m => m.status === 'failed');
+    }
+    
+    const database = getDatabase();
+    if (!database) return [];
+    const rows = database.getAllSync<any>(
+      "SELECT * FROM messages WHERE status = 'failed' ORDER BY timestamp ASC"
+    );
+    return rows.map(row => ({
+      id: row.id,
+      chatId: row.chatId,
+      senderId: row.senderId,
+      text: row.text,
+      originalLanguage: row.originalLanguage || undefined,
+      timestamp: row.timestamp,
+      status: row.status,
+      readBy: JSON.parse(row.readBy),
+      mediaURL: row.mediaURL || undefined,
+      localOnly: row.localOnly === 1
+    }));
+  },
+
   // Utility operations
   clearAllData: () => {
     if (isWebPlatform) {

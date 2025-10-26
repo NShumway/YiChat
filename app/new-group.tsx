@@ -12,17 +12,18 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import {
   collection,
-  getDocs,
   addDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useStore } from '../store/useStore';
 import { User } from '../types/User';
+import { safeGetDocs } from '../services/firestoreHelpers';
 
 export default function NewGroupScreen() {
   const router = useRouter();
   const currentUser = useStore((state) => state.user);
+  const connectionStatus = useStore((state) => state.connectionStatus);
   const [groupName, setGroupName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -34,14 +35,26 @@ export default function NewGroupScreen() {
   useEffect(() => {
     const loadUsers = async () => {
       if (!currentUser) return;
-      
+
+      // Check if offline
+      if (connectionStatus === 'offline') {
+        Alert.alert('Offline', 'You need to be online to create a group.');
+        return;
+      }
+
       setIsLoading(true);
       try {
-        const querySnapshot = await getDocs(collection(db, 'users'));
-        const users = querySnapshot.docs
-          .map((doc) => ({ ...doc.data(), uid: doc.id } as User))
-          .filter((user) => user.uid !== currentUser.uid); // Exclude self
-        
+        const { data, isOfflineError } = await safeGetDocs<User>(
+          collection(db, 'users'),
+          []
+        );
+
+        if (isOfflineError) {
+          Alert.alert('Offline', 'You need to be online to create a group.');
+          return;
+        }
+
+        const users = data.filter((user) => user.uid !== currentUser.uid); // Exclude self
         setAllUsers(users);
       } catch (error) {
         console.error('❌ Error loading users:', error);
@@ -52,7 +65,7 @@ export default function NewGroupScreen() {
     };
 
     loadUsers();
-  }, [currentUser]);
+  }, [currentUser, connectionStatus]);
 
   const filteredUsers = allUsers.filter((user) => {
     const searchLower = searchQuery.toLowerCase();
@@ -72,7 +85,7 @@ export default function NewGroupScreen() {
 
   const createGroup = async () => {
     if (!currentUser) return;
-    
+
     if (!groupName.trim()) {
       Alert.alert('Error', 'Please enter a group name');
       return;
@@ -83,10 +96,16 @@ export default function NewGroupScreen() {
       return;
     }
 
+    // Check if offline
+    if (connectionStatus === 'offline') {
+      Alert.alert('Offline', 'You need to be online to create a group.');
+      return;
+    }
+
     setIsCreating(true);
     try {
       const participants = [currentUser.uid, ...selectedUsers];
-      
+
       // Create unreadCount map
       const unreadCount: { [key: string]: number } = {};
       participants.forEach((uid) => {

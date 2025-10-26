@@ -1,10 +1,11 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Chat } from '../types/Message';
 import { useStore } from '../store/useStore';
+import { safeGetDoc } from '../services/firestoreHelpers';
 
 interface ChatListItemProps {
   chat: Chat;
@@ -13,6 +14,7 @@ interface ChatListItemProps {
 export function ChatListItem({ chat }: ChatListItemProps) {
   const router = useRouter();
   const currentUser = useStore((state) => state.user);
+  const connectionStatus = useStore((state) => state.connectionStatus);
   const [otherUserName, setOtherUserName] = useState<string>('Loading...');
 
   // Fetch chat name (group name or other user's name)
@@ -31,21 +33,28 @@ export function ChatListItem({ chat }: ChatListItemProps) {
         return;
       }
 
-      try {
-        const userDoc = await getDoc(doc(db, 'users', otherParticipantId));
-        if (userDoc.exists()) {
-          setOtherUserName(userDoc.data().displayName || 'Unknown User');
-        } else {
-          setOtherUserName(`User ${otherParticipantId.slice(0, 8)}`);
-        }
-      } catch (error) {
-        console.error('Error fetching user details:', error);
+      // Skip if offline - use fallback
+      if (connectionStatus === 'offline') {
+        setOtherUserName(`User ${otherParticipantId.slice(0, 8)}`);
+        return;
+      }
+
+      const { data, exists, isOfflineError } = await safeGetDoc<any>(
+        doc(db, 'users', otherParticipantId)
+      );
+
+      if (exists && data) {
+        setOtherUserName(data.displayName || 'Unknown User');
+      } else if (isOfflineError) {
+        // Offline - use fallback
+        setOtherUserName(`User ${otherParticipantId.slice(0, 8)}`);
+      } else {
         setOtherUserName(`User ${otherParticipantId.slice(0, 8)}`);
       }
     };
 
     fetchChatName();
-  }, [chat.type, chat.name, chat.participants, currentUser?.uid]);
+  }, [chat.type, chat.name, chat.participants, currentUser?.uid, connectionStatus]);
 
   const formatTimestamp = (timestamp?: number) => {
     if (!timestamp) return '';

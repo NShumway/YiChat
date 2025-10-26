@@ -1,8 +1,10 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { memo, useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Message } from '../types/Message';
+import { safeGetDoc } from '../services/firestoreHelpers';
+import { useStore } from '../store/useStore';
 
 interface MessageBubbleProps {
   message: Message;
@@ -13,24 +15,40 @@ interface MessageBubbleProps {
 export const MessageBubble = memo(
   ({ message, isOwn, isGroupChat }: MessageBubbleProps) => {
     const [senderName, setSenderName] = useState<string>('');
+    const connectionStatus = useStore((state) => state.connectionStatus);
 
     // Fetch sender name for group chats
     useEffect(() => {
       if (!isGroupChat || isOwn || message.type === 'system') return;
 
       const fetchSenderName = async () => {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', message.senderId));
-          if (userDoc.exists()) {
-            setSenderName(userDoc.data().displayName || 'Unknown');
-          }
-        } catch (error) {
-          console.error('Error fetching sender name:', error);
+        // Use cached name if available
+        if (message.senderName) {
+          setSenderName(message.senderName);
+          return;
+        }
+
+        // Skip if offline
+        if (connectionStatus === 'offline') {
+          setSenderName('User');
+          return;
+        }
+
+        const { data, exists, isOfflineError } = await safeGetDoc<any>(
+          doc(db, 'users', message.senderId)
+        );
+
+        if (exists && data) {
+          setSenderName(data.displayName || 'Unknown');
+        } else if (isOfflineError) {
+          setSenderName('User'); // Offline fallback
+        } else {
+          setSenderName('Unknown');
         }
       };
 
       fetchSenderName();
-    }, [isGroupChat, isOwn, message.senderId, message.type]);
+    }, [isGroupChat, isOwn, message.senderId, message.type, message.senderName, connectionStatus]);
 
     const formatTime = (timestamp: number) => {
       const date = new Date(timestamp);
