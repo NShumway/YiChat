@@ -149,6 +149,12 @@ export default function ChatsScreen() {
           connectionStatus === 'offline' ? styles.statusOffline :
           styles.statusReconnecting
         ]} />
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => router.push('/settings' as any)}
+        >
+          <Text style={styles.settingsIcon}>⚙️</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Main Content */}
@@ -271,6 +277,13 @@ const styles = StyleSheet.create({
   },
   statusReconnecting: {
     backgroundColor: '#FF9800',
+  },
+  settingsButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  settingsIcon: {
+    fontSize: 24,
   },
   content: {
     flex: 1,

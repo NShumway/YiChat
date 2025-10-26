@@ -34,6 +34,17 @@ const LANGUAGES = [
   { code: 'it', name: 'Italian', flag: '🇮🇹' },
 ];
 
+// Common nationalities for cultural context
+const NATIONALITIES = [
+  'American', 'Mexican', 'Canadian', 'British', 'Australian',
+  'Chinese', 'Japanese', 'Korean', 'Indian', 'French',
+  'German', 'Spanish', 'Italian', 'Brazilian', 'Russian',
+  'Saudi Arabian', 'Egyptian', 'Nigerian', 'South African',
+  'Argentinian', 'Colombian', 'Vietnamese', 'Thai', 'Filipino',
+  'Turkish', 'Polish', 'Ukrainian', 'Indonesian', 'Malaysian',
+  'Pakistani', 'Bangladeshi', 'Iranian', 'Iraqi', 'Other',
+];
+
 export default function SignUpScreen() {
   const router = useRouter();
   const { setUser, setLoading, setError, clearError } = useStore();
@@ -43,6 +54,7 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [preferredLanguage, setPreferredLanguage] = useState('en');
+  const [nationality, setNationality] = useState('American');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Google Sign-In
@@ -162,6 +174,7 @@ export default function SignUpScreen() {
         displayName: displayName.trim(),
         email: email.toLowerCase().trim(),
         preferredLanguage,
+        nationality,
         status: 'online',
         createdAt: new Date(),
         lastSeen: new Date(),
@@ -193,6 +206,7 @@ export default function SignUpScreen() {
         displayName: displayName.trim(),
         email: email.toLowerCase().trim(),
         preferredLanguage,
+        nationality,
         status: 'online',
       });
 
@@ -334,6 +348,40 @@ export default function SignUpScreen() {
                     ]}
                   >
                     {lang.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Nationality */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Your Nationality</Text>
+            <Text style={styles.helperText}>
+              Helps AI provide culturally relevant context
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.languageScroll}
+            >
+              {NATIONALITIES.map((nat) => (
+                <TouchableOpacity
+                  key={nat}
+                  style={[
+                    styles.languageChip,
+                    nationality === nat && styles.languageChipSelected,
+                  ]}
+                  onPress={() => setNationality(nat)}
+                  disabled={isSubmitting}
+                >
+                  <Text
+                    style={[
+                      styles.languageName,
+                      nationality === nat && styles.languageNameSelected,
+                    ]}
+                  >
+                    {nat}
                   </Text>
                 </TouchableOpacity>
               ))}
