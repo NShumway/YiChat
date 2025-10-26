@@ -82,3 +82,7 @@ yarn-error.*
 # Project requirements and documentation
 *.pdf
 MessageAI Project Requirements.pdf
+
+# Google Services
+google-services.json
+GoogleService-Info.plist

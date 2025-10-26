@@ -7,6 +7,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Keyboard,
+  KeyboardEvent,
 } from 'react-native';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -47,6 +49,7 @@ export default function ChatScreen() {
   const [chatData, setChatData] = useState<any>(null);
   const flashListRef = useRef<FlashList<Message>>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const currentScrollOffset = useRef<number>(0);
 
   // Load chat data and reset unread count
   useEffect(() => {
@@ -179,14 +182,15 @@ export default function ChatScreen() {
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
       return (
-        <MessageBubble 
-          message={item} 
-          isOwn={item.senderId === user?.uid} 
+        <MessageBubble
+          message={item}
+          isOwn={item.senderId === user?.uid}
           isGroupChat={chatData?.type === 'group'}
+          chatParticipants={chatData?.participants}
         />
       );
     },
-    [user?.uid, chatData?.type]
+    [user?.uid, chatData?.type, chatData?.participants]
   );
 
   // Memoized keyExtractor
@@ -261,6 +265,46 @@ export default function ChatScreen() {
     };
   }, [chatId, user]);
 
+  // Handle keyboard show/hide to maintain scroll position
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event: KeyboardEvent) => {
+        // Keyboard is showing - scroll up by keyboard height to keep current bottom message visible
+        const keyboardHeight = event.endCoordinates.height;
+
+        // Get current scroll position (FlashList doesn't expose this directly)
+        // So we scroll by the keyboard height to maintain the visible content
+        setTimeout(() => {
+          flashListRef.current?.scrollToOffset({
+            offset: currentScrollOffset.current + keyboardHeight,
+            animated: true,
+          });
+        }, 50);
+      }
+    );
+
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      (event: KeyboardEvent) => {
+        // Keyboard is hiding - scroll back down
+        const keyboardHeight = event.endCoordinates.height;
+
+        setTimeout(() => {
+          flashListRef.current?.scrollToOffset({
+            offset: Math.max(0, currentScrollOffset.current - keyboardHeight),
+            animated: true,
+          });
+        }, 50);
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, []);
+
   // Mark messages as read when viewing chat
   useEffect(() => {
     if (!chatId || !user || messages.length === 0) return;
@@ -304,6 +348,15 @@ export default function ChatScreen() {
 
     const text = messageText.trim();
     setIsSending(true);
+
+    // Process any pending messages first (if online and queue not empty)
+    if (connectionStatus === 'online') {
+      const { queueLength } = require('../../services/messageQueue').getQueueStatus();
+      if (queueLength > 0) {
+        console.log('🔄 Processing pending queue before sending new message');
+        require('../../services/messageQueue').processPendingMessages();
+      }
+    }
 
     // 1. Create optimistic message
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -434,6 +487,11 @@ export default function ChatScreen() {
         keyExtractor={keyExtractor}
         estimatedItemSize={80}
         contentContainerStyle={styles.messagesList}
+        onScroll={(event) => {
+          // Track current scroll position for keyboard adjustment
+          currentScrollOffset.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         // Performance optimizations
         removeClippedSubviews={true}
         maxToRenderPerBatch={10}

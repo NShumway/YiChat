@@ -1,5 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
-import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, updateDoc, doc, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
 import { dbOperations } from './database';
 import { useStore } from '../store/useStore';
@@ -32,14 +32,13 @@ export const initMessageQueue = () => {
   
   // Set up network state listener and store unsubscribe function
   netInfoUnsubscribe = NetInfo.addEventListener(state => {
-    const wasOffline = useStore.getState().connectionStatus === 'offline';
-    
     if (state.isConnected && state.isInternetReachable) {
       useStore.getState().setConnectionStatus('online');
-      
-      // Only process if we just came back online
-      if (wasOffline && messageQueue.length > 0) {
-        console.log(`🌐 Network restored, processing ${messageQueue.length} queued messages`);
+
+      // Process queue whenever we're online and have pending messages
+      // Don't check wasOffline - just process if there's work to do
+      if (messageQueue.length > 0) {
+        console.log(`🌐 Network available, processing ${messageQueue.length} queued messages`);
         processPendingMessages();
       }
     } else {
@@ -68,30 +67,63 @@ export const initMessageQueue = () => {
  */
 const RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000];
 let retryAttempts = new Map<string, number>();
+let batchRetryAttempts = 0;
+
+/**
+ * Send a batch of messages with exponential backoff retry
+ */
+const sendBatchWithRetry = async (messages: Message[]): Promise<void> => {
+  try {
+    await sendBatchToFirestore(messages);
+    batchRetryAttempts = 0; // Success - clear retry count
+  } catch (error: any) {
+    // Check if it's a transient network error or permanent error
+    const isTransientError =
+      error.code === 'unavailable' ||
+      error.code === 'deadline-exceeded' ||
+      error.message?.includes('network') ||
+      error.message?.includes('timeout');
+
+    if (isTransientError && batchRetryAttempts < RETRY_DELAYS.length) {
+      const delay = RETRY_DELAYS[batchRetryAttempts];
+      batchRetryAttempts++;
+
+      console.log(`⏰ Batch retry ${batchRetryAttempts}/${RETRY_DELAYS.length} in ${delay}ms`);
+
+      // Wait and retry
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sendBatchWithRetry(messages); // Recursive retry
+    } else {
+      // Permanent error or max retries exceeded - throw to trigger fallback
+      batchRetryAttempts = 0;
+      throw error;
+    }
+  }
+};
 
 /**
  * Send a message with exponential backoff retry
  */
 const sendWithRetry = async (message: Message): Promise<void> => {
   const attempts = retryAttempts.get(message.id) || 0;
-  
+
   try {
     await sendMessageToFirestore(message);
     retryAttempts.delete(message.id); // Success - clear retry count
   } catch (error: any) {
     // Check if it's a transient network error or permanent error
-    const isTransientError = 
-      error.code === 'unavailable' || 
+    const isTransientError =
+      error.code === 'unavailable' ||
       error.code === 'deadline-exceeded' ||
       error.message?.includes('network') ||
       error.message?.includes('timeout');
-    
+
     if (isTransientError && attempts < RETRY_DELAYS.length) {
       const delay = RETRY_DELAYS[attempts];
       retryAttempts.set(message.id, attempts + 1);
-      
+
       console.log(`⏰ Retry ${attempts + 1}/${RETRY_DELAYS.length} for ${message.id} in ${delay}ms`);
-      
+
       // Wait and retry
       await new Promise(resolve => setTimeout(resolve, delay));
       return sendWithRetry(message); // Recursive retry
@@ -104,50 +136,74 @@ const sendWithRetry = async (message: Message): Promise<void> => {
 
 /**
  * Process all pending messages in the queue
- * Processes sequentially to preserve message order
+ * Uses batching for efficiency on poor connections (up to 10 messages per batch)
  */
 export const processPendingMessages = async () => {
   if (isProcessing || messageQueue.length === 0) return;
-  
+
   isProcessing = true;
   useStore.getState().setConnectionStatus('reconnecting');
-  
-  console.log(`🔄 Processing ${messageQueue.length} pending messages`);
-  
+
+  console.log(`🔄 Processing ${messageQueue.length} pending messages with batching`);
+
   const errors: { message: Message; error: any }[] = [];
-  
-  // Process in order, one at a time to preserve sequence
-  for (const message of [...messageQueue]) {
+  const BATCH_SIZE = 10; // Firestore allows up to 500, but 10 is safer for poor networks
+
+  // Process in batches to preserve order and improve efficiency
+  const queueCopy = [...messageQueue];
+
+  for (let i = 0; i < queueCopy.length; i += BATCH_SIZE) {
+    const batch = queueCopy.slice(i, i + BATCH_SIZE);
+
     try {
-      await sendWithRetry(message); // With exponential backoff
-      
-      // Success: remove from queue
-      dbOperations.deletePendingMessage(message.id);
-      messageQueue = messageQueue.filter(m => m.id !== message.id);
-      
-      console.log(`✅ Sent queued message ${message.id}`);
-      
+      await sendBatchWithRetry(batch);
+
+      // Success: remove batch from queue
+      batch.forEach(message => {
+        dbOperations.deletePendingMessage(message.id);
+        messageQueue = messageQueue.filter(m => m.id !== message.id);
+      });
+
+      console.log(`✅ Sent batch of ${batch.length} messages`);
+
     } catch (error) {
-      console.error(`❌ Failed to send pending message ${message.id} after retries:`, error);
-      errors.push({ message, error });
-      
-      // Stop processing on persistent error (e.g., auth expired)
-      // Will retry on next reconnect
-      // Clear retry count to start fresh on next network change
-      retryAttempts.delete(message.id);
-      break;
+      console.error(`❌ Failed to send batch after retries:`, error);
+
+      // On batch failure, fall back to individual sends for this batch
+      console.log('🔄 Falling back to individual sends for failed batch');
+
+      for (const message of batch) {
+        try {
+          await sendWithRetry(message);
+
+          // Success: remove from queue
+          dbOperations.deletePendingMessage(message.id);
+          messageQueue = messageQueue.filter(m => m.id !== message.id);
+
+          console.log(`✅ Sent queued message ${message.id} (individual)`);
+
+        } catch (error) {
+          console.error(`❌ Failed to send pending message ${message.id} after retries:`, error);
+          errors.push({ message, error });
+
+          // Stop processing on persistent error (e.g., auth expired)
+          retryAttempts.delete(message.id);
+          isProcessing = false;
+          return errors;
+        }
+      }
     }
   }
-  
+
   isProcessing = false;
-  
+
   if (messageQueue.length === 0) {
     useStore.getState().setConnectionStatus('online');
     console.log('✅ All queued messages sent successfully');
   } else {
     console.warn(`⚠️ ${messageQueue.length} messages still pending after processing`);
   }
-  
+
   return errors;
 };
 
@@ -169,6 +225,59 @@ export const queueMessage = (message: Message) => {
 };
 
 /**
+ * Send a batch of messages to Firestore using writeBatch
+ * More efficient for poor connections - single network request
+ */
+const sendBatchToFirestore = async (messages: Message[]) => {
+  const batch = writeBatch(db);
+  const messageRefs: { oldId: string; newRef: any }[] = [];
+
+  // Add all messages to batch
+  for (const message of messages) {
+    const messageRef = doc(collection(db, 'messages'));
+    batch.set(messageRef, {
+      chatId: message.chatId,
+      senderId: message.senderId,
+      text: message.text,
+      originalLanguage: message.originalLanguage,
+      timestamp: serverTimestamp(),
+      status: 'sent',
+      readBy: message.readBy,
+    });
+
+    messageRefs.push({ oldId: message.id, newRef: messageRef });
+  }
+
+  // Update last message for each affected chat (one update per chat)
+  const chatUpdates = new Map<string, Message>();
+  messages.forEach(msg => {
+    // Keep the latest message per chat
+    if (!chatUpdates.has(msg.chatId) || msg.timestamp > chatUpdates.get(msg.chatId)!.timestamp) {
+      chatUpdates.set(msg.chatId, msg);
+    }
+  });
+
+  chatUpdates.forEach((msg, chatId) => {
+    const chatRef = doc(db, 'chats', chatId);
+    batch.update(chatRef, {
+      lastMessage: msg.text,
+      lastMessageTimestamp: serverTimestamp(),
+    });
+  });
+
+  // Commit batch (single network request)
+  await batch.commit();
+
+  console.log(`📤 Batch of ${messages.length} messages sent to Firestore`);
+
+  // Update local SQLite with real IDs
+  messageRefs.forEach(({ oldId, newRef }) => {
+    dbOperations.updateMessageId(oldId, newRef.id);
+    dbOperations.updateMessageStatus(newRef.id, 'sent');
+  });
+};
+
+/**
  * Send a message to Firestore
  * Updates local SQLite with real ID and status
  */
@@ -182,19 +291,19 @@ const sendMessageToFirestore = async (message: Message) => {
     status: 'sent',
     readBy: message.readBy,
   });
-  
+
   console.log(`📤 Message sent to Firestore: ${docRef.id}`);
-  
+
   // Update local SQLite with real ID
   dbOperations.updateMessageId(message.id, docRef.id);
   dbOperations.updateMessageStatus(docRef.id, 'sent');
-  
+
   // Update chat lastMessage
   await updateDoc(doc(db, 'chats', message.chatId), {
     lastMessage: message.text,
     lastMessageTimestamp: serverTimestamp(),
   });
-  
+
   return docRef;
 };
 

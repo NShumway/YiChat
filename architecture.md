@@ -1,3 +1,4 @@
+```mermaid
 graph TB
     subgraph "Mobile App (React Native + Expo + EAS Build)"
         UI[UI Layer<br/>Expo Router + React Native]
@@ -93,6 +94,7 @@ graph TB
 
     classDef critical fill:#ffcccc,stroke:#ff0000,stroke-width:2px
     class LocalDB,Firestore,ConnMgr,RateLimit critical
+```
 
 ---
 

@@ -1,20 +1,24 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { memo, useEffect, useState } from 'react';
 import { doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Message } from '../types/Message';
 import { safeGetDoc } from '../services/firestoreHelpers';
 import { useStore } from '../store/useStore';
+import { ReadReceiptsModal } from './ReadReceiptsModal';
 
 interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
   isGroupChat?: boolean;
+  chatParticipants?: string[];
 }
 
 export const MessageBubble = memo(
-  ({ message, isOwn, isGroupChat }: MessageBubbleProps) => {
+  ({ message, isOwn, isGroupChat, chatParticipants }: MessageBubbleProps) => {
     const [senderName, setSenderName] = useState<string>('');
+    const [showReceiptsModal, setShowReceiptsModal] = useState(false);
+    const [readByNames, setReadByNames] = useState<string[]>([]);
     const connectionStatus = useStore((state) => state.connectionStatus);
 
     // Fetch sender name for group chats
@@ -86,6 +90,54 @@ export const MessageBubble = memo(
       return readByOthers;
     };
 
+    // Fetch names of users who read the message (for group chats)
+    useEffect(() => {
+      if (!isGroupChat || !isOwn) return;
+
+      const readByUserIds = Object.keys(message.readBy || {})
+        .filter(uid => uid !== message.senderId);
+
+      if (readByUserIds.length === 0) return;
+
+      const fetchReadByNames = async () => {
+        const names = await Promise.all(
+          readByUserIds.slice(0, 2).map(async (uid) => {
+            try {
+              const userDoc = await getDoc(doc(db, 'users', uid));
+              const userData = userDoc.exists() ? userDoc.data() : null;
+              return userData?.displayName || 'Unknown';
+            } catch (error) {
+              return 'Unknown';
+            }
+          })
+        );
+
+        setReadByNames(names);
+      };
+
+      fetchReadByNames();
+    }, [isGroupChat, isOwn, message.readBy, message.senderId]);
+
+    // Generate read receipt text for group chats
+    const getGroupReadReceiptText = () => {
+      const readByUserIds = Object.keys(message.readBy || {})
+        .filter(uid => uid !== message.senderId);
+
+      if (readByUserIds.length === 0) return null;
+
+      if (readByUserIds.length === 1) {
+        return `Read by ${readByNames[0] || 'someone'}`;
+      }
+
+      if (readByUserIds.length === 2) {
+        return `Read by ${readByNames[0] || 'someone'} and ${readByNames[1] || 'someone'}`;
+      }
+
+      // More than 2 people
+      const othersCount = readByUserIds.length - 1;
+      return `Read by ${readByNames[0] || 'someone'} and ${othersCount} ${othersCount === 1 ? 'other' : 'others'}`;
+    };
+
     // System messages (group events)
     if (message.type === 'system') {
       return (
@@ -95,27 +147,54 @@ export const MessageBubble = memo(
       );
     }
 
+    const groupReadReceiptText = isGroupChat && isOwn ? getGroupReadReceiptText() : null;
+
     return (
-      <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
-        <View style={[styles.bubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
-          {isGroupChat && !isOwn && senderName && (
-            <Text style={styles.senderName}>{senderName}</Text>
-          )}
-          <Text style={[styles.text, isOwn ? styles.ownText : styles.otherText]}>
-            {message.text}
-          </Text>
-          <View style={styles.footer}>
-            <Text style={[styles.time, isOwn ? styles.ownTime : styles.otherTime]}>
-              {formatTime(message.timestamp)}
-            </Text>
-            {isOwn && (
-              <Text style={[styles.status, isRead() && styles.statusRead]}>
-                {getStatusIcon()}
-              </Text>
+      <>
+        <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
+          <View style={[styles.bubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
+            {isGroupChat && !isOwn && senderName && (
+              <Text style={styles.senderName}>{senderName}</Text>
             )}
+            <Text style={[styles.text, isOwn ? styles.ownText : styles.otherText]}>
+              {message.text}
+            </Text>
+            <View style={styles.footer}>
+              <Text style={[styles.time, isOwn ? styles.ownTime : styles.otherTime]}>
+                {formatTime(message.timestamp)}
+              </Text>
+              {isOwn && !isGroupChat && (
+                <Text style={[styles.status, isRead() && styles.statusRead]}>
+                  {getStatusIcon()}
+                </Text>
+              )}
+            </View>
           </View>
         </View>
-      </View>
+
+        {/* Group chat read receipt - tappable for details */}
+        {groupReadReceiptText && (
+          <Pressable
+            onPress={() => setShowReceiptsModal(true)}
+            style={[styles.container, styles.ownContainer]}
+          >
+            <Text style={styles.groupReadReceipt}>
+              {groupReadReceiptText}
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Read receipts modal */}
+        {isGroupChat && isOwn && chatParticipants && (
+          <ReadReceiptsModal
+            visible={showReceiptsModal}
+            onClose={() => setShowReceiptsModal(false)}
+            readBy={message.readBy || {}}
+            participants={chatParticipants}
+            senderId={message.senderId}
+          />
+        )}
+      </>
     );
   },
   // Only re-render if message ID, text, status, or readBy changes
@@ -208,6 +287,13 @@ const styles = StyleSheet.create({
     color: '#999',
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  groupReadReceipt: {
+    fontSize: 12,
+    color: '#007AFF',
+    marginTop: -2,
+    marginBottom: 4,
+    paddingRight: 16,
   },
 });
 

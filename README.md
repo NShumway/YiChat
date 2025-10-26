@@ -2,6 +2,8 @@
 
 YiChat is a cross-platform messaging application designed for seamless communication across language barriers. Built with React Native, Expo, and Firebase, it combines real-time messaging with AI-powered translation and cultural context features.
 
+**🚀 New to the project? Start here: [QUICK_START.md](./QUICK_START.md)**
+
 ## 🌟 Features
 
 ### ✅ Completed (MVP)
@@ -103,94 +105,71 @@ Scan the QR code with:
 
 **Note:** Expo Go has limitations (no background push notifications, limited lifecycle handling). For full features, use EAS Build (see below).
 
-### 4. Run with EAS Build (Full Features)
+### 4. Run with EAS Build (Full Features) ⭐ RECOMMENDED
 
 **First time setup:**
 ```bash
+# Install EAS CLI globally
+npm install -g eas-cli
+
 # Login to Expo
 eas login
 
-# Configure EAS Build
-eas build:configure
+# Initialize EAS project
+eas init
 ```
+
+**Download Firebase config files:**
+1. Get `google-services.json` from Firebase Console (Android app)
+2. Get `GoogleService-Info.plist` from Firebase Console (iOS app)
+3. Place both in project root (they're in .gitignore)
+4. No env variables needed - Expo finds them automatically!
 
 **Build development versions:**
 ```bash
 # Android APK (install on any Android device)
 eas build --profile development --platform android
 
-# iOS development build (install on your registered devices)
+# iOS development build (requires free Apple ID)
 eas build --profile development --platform ios
 ```
 
-After build completes, download and install on your device. Then start the dev server:
+After build completes (~5-10 min), download and install on your device. Then start the dev server:
 ```bash
 npm start
 ```
 
-The development build will connect to your local dev server.
+The development build will connect to your local dev server with full native features!
+
+**📖 For detailed instructions, see [EAS_SETUP.md](./EAS_SETUP.md)**
 
 ## 🔧 Detailed Setup Guide
 
 ### Firebase Setup
 
-1. **Create Firebase Project:**
-   - Go to [Firebase Console](https://console.firebase.google.com/)
-   - Click "Add project"
-   - Follow the wizard (Analytics optional)
+YiChat requires a complete Firebase project with Web, Android, and iOS apps configured.
 
-2. **Add Web App to Firebase:**
-   - In Project Settings, click "Add app" → Web (</> icon)
-   - Register app with nickname "YiChat Web"
-   - Copy the Firebase configuration
+**📖 Follow the comprehensive guide: [FIREBASE_APP_SETUP.md](./FIREBASE_APP_SETUP.md)**
 
-3. **Enable Firebase Services:**
+This guide covers:
+- Creating a Firebase project from scratch
+- Enabling required services (Firestore, Auth, Storage, Functions)
+- Adding Web, Android, and iOS apps to Firebase
+- Downloading configuration files
+- Deploying security rules
+- Complete verification checklist
 
-   **Authentication:**
-   - Go to Authentication → Sign-in method
-   - Enable "Email/Password"
+**Quick Summary (see guide for details):**
 
-   **Firestore Database:**
-   - Go to Firestore Database → Create database
-   - Start in **production mode**
-   - Choose a location close to your users
-   - **IMPORTANT:** Create database named `yichat` (not the default database)
-
-   **Cloud Storage:**
-   - Go to Storage → Get Started
-   - Start in production mode
-
-   **Cloud Messaging (for push notifications):**
-   - Already enabled by default
-   - No additional setup needed for development
-
-4. **Deploy Security Rules:**
-
-   Install Firebase CLI:
-   ```bash
-   npm install -g firebase-tools
-   firebase login
-   firebase init firestore
-   ```
-
-   Deploy rules:
-   ```bash
-   firebase deploy --only firestore:rules
-   firebase deploy --only storage
-   ```
-
-5. **Add Firebase Config to .env.local:**
-
-   ```bash
-   EXPO_PUBLIC_FIREBASE_API_KEY=your-api-key
-   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
-   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
-   EXPO_PUBLIC_FIREBASE_APP_ID=your-app-id
-   ```
+1. Create Firebase project and enable services
+2. Add Web app → Copy config to `.env.local`
+3. Add Android app → Download `google-services.json`
+4. Add iOS app → Download `GoogleService-Info.plist`
+5. Deploy security rules
 
 ### EAS Build Setup (Required for Full Features)
+
+**📖 Follow the comprehensive guide: [EAS_SETUP.md](./EAS_SETUP.md)**
 
 EAS Build provides:
 - ✅ Background push notifications
@@ -198,45 +177,20 @@ EAS Build provides:
 - ✅ All native features
 - ✅ Production-ready builds
 
-**Setup:**
+**Quick Summary (see guide for details):**
 
-1. **Install EAS CLI:**
-   ```bash
-   npm install -g eas-cli
-   eas login
-   ```
+1. Install EAS CLI: `npm install -g eas-cli`
+2. Login: `eas login`
+3. Initialize: `eas init`
+4. Build: `eas build --profile development --platform android`
+5. Install on device and run `npm start`
 
-2. **Configure Project:**
-   ```bash
-   eas build:configure
-   ```
-
-   This creates `eas.json` (already included in repo).
-
-3. **Build Development Versions:**
-
-   **Android (free):**
-   ```bash
-   eas build --profile development --platform android
-   ```
-
-   **iOS (requires free Apple ID):**
-   ```bash
-   eas build --profile development --platform ios
-   ```
-
-   First time: EAS will guide you through Apple ID setup (no paid license needed).
-
-4. **Install and Run:**
-   - Download the build from the provided link
-   - Install on your device
-   - Run `npm start` to start dev server
-   - Development build will connect automatically
-
-**Build Profiles:**
-- `development`: Full features + debugging (use during development)
-- `preview`: Production-like (share with testers)
-- `production`: App Store/Play Store ready
+See **[EAS_SETUP.md](./EAS_SETUP.md)** for:
+- Detailed setup instructions
+- Push notification configuration
+- Troubleshooting common issues
+- Build profile explanations
+- Cost breakdown
 
 ## 📱 Available Scripts
 

@@ -16,7 +16,12 @@ module.exports = {
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.yichat.app"
+      bundleIdentifier: "com.yichat.app",
+      googleServicesFile: process.env.GOOGLE_SERVICE_INFO_PLIST || "./GoogleService-Info.plist",
+      infoPlist: {
+        UIBackgroundModes: ["remote-notification"],
+        ITSAppUsesNonExemptEncryption: false
+      }
     },
     android: {
       adaptiveIcon: {
@@ -24,6 +29,13 @@ module.exports = {
         backgroundColor: "#ffffff"
       },
       package: "com.yichat.app",
+      permissions: [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false
     },
@@ -33,7 +45,15 @@ module.exports = {
     plugins: [
       "expo-router",
       "expo-sqlite",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#ffffff",
+          "sounds": []
+        }
+      ]
     ],
     extra: {
       firebaseApiKey: process.env.FIREBASE_API_KEY,
@@ -46,6 +66,9 @@ module.exports = {
       googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID,
       googleIosClientId: process.env.GOOGLE_IOS_CLIENT_ID,
       googleAndroidClientId: process.env.GOOGLE_ANDROID_CLIENT_ID,
+      eas: {
+        projectId: "8df0cbc4-c26c-4d74-bc2d-331891e1999b"
+      }
     },
     scheme: "yichat"
   }
