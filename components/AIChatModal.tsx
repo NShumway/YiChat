@@ -23,6 +23,92 @@ interface AIChatModalProps {
   senderNationality?: string;
 }
 
+/**
+ * Stream using XMLHttpRequest for React Native
+ * Uses readyState polling to get chunks as they arrive
+ */
+function streamWithXHR(
+  url: string,
+  options: { method: string; headers: any; body: string },
+  onProgress: (text: string) => void,
+  onComplete: (text: string) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(options.method, url, true);
+
+    // Set headers
+    Object.keys(options.headers).forEach(key => {
+      xhr.setRequestHeader(key, options.headers[key]);
+    });
+
+    let fullText = '';
+    let lastProcessedIndex = 0;
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    // Poll for new data every 50ms while streaming
+    const pollForData = () => {
+      if (xhr.readyState >= 3 && xhr.responseText.length > lastProcessedIndex) {
+        const newText = xhr.responseText.substring(lastProcessedIndex);
+        const newLength = xhr.responseText.length;
+
+        console.log(`📊 XHR poll: readyState=${xhr.readyState}, responseLength=${newLength}, newChars=${newText.length}`);
+
+        lastProcessedIndex = newLength;
+
+        // Parse SSE format
+        const lines = newText.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                fullText += data.text;
+                console.log(`✨ Streaming update: ${fullText.length} chars total`);
+                onProgress(fullText);
+              } else if (data.error) {
+                if (pollInterval) clearInterval(pollInterval);
+                reject(new Error(data.error));
+                return;
+              }
+            } catch (e) {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        }
+      }
+    };
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 3 && !pollInterval) {
+        // Start polling when streaming begins
+        pollInterval = setInterval(pollForData, 50);
+      }
+    };
+
+    xhr.onload = () => {
+      if (pollInterval) clearInterval(pollInterval);
+
+      // Process any remaining data
+      pollForData();
+
+      if (xhr.status === 200) {
+        onComplete(fullText);
+        resolve();
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
+      }
+    };
+
+    xhr.onerror = () => {
+      if (pollInterval) clearInterval(pollInterval);
+      reject(new Error('Network error'));
+    };
+
+    xhr.send(options.body);
+  });
+}
+
 export const AIChatModal = ({ visible, onClose, message, senderNationality }: AIChatModalProps) => {
   const [userInput, setUserInput] = useState('');
   const [conversation, setConversation] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
@@ -104,10 +190,9 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
         throw new Error(`Stream failed: ${response.status} - ${errorText}`);
       }
 
-      // React Native doesn't support ReadableStream, so we need to handle the response differently
-      // Check if we're on web or native
+      // Check if we're on web (supports ReadableStream) or React Native (needs XHR)
       if (response.body && typeof response.body.getReader === 'function') {
-        // Web: Use ReadableStream
+        // Web: Use ReadableStream for true streaming
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullText = '';
@@ -140,35 +225,37 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
           }
         }
       } else {
-        // React Native: Response doesn't support streaming, get full text
-        const responseText = await response.text();
-        console.log('📱 React Native response (no streaming):', responseText.substring(0, 200));
-
-        // Parse SSE format manually
-        const lines = responseText.split('\n');
-        let fullText = '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                fullText += data.text;
-              } else if (data.error) {
-                throw new Error(data.error);
-              }
-            } catch (parseError) {
-              console.warn('⚠️ Failed to parse line:', line);
-            }
+        // React Native: Use XMLHttpRequest for streaming via progress events
+        await streamWithXHR(
+          response.url,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              messages: [],
+              messageContext: true,
+              messageText: message.text,
+              messageLang: message.originalLanguage,
+              senderId,
+              senderNationality: senderNationality || 'Unknown',
+              userNationality: user?.nationality || 'Unknown',
+              hasPreGeneratedInsight: false,
+              preGeneratedInsight: null,
+            }),
+          },
+          (text) => setStreamingText(text),
+          (finalText) => {
+            setConversation([{
+              role: 'assistant',
+              content: finalText
+            }]);
+            setStreamingText('');
+            setIsStreaming(false);
           }
-        }
-
-        setConversation([{
-          role: 'assistant',
-          content: fullText
-        }]);
-        setStreamingText('');
-        setIsStreaming(false);
+        );
       }
     } catch (error) {
       console.error('❌ Streaming error:', error);
@@ -229,7 +316,7 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
         throw new Error(`Stream failed: ${response.status} - ${errorText}`);
       }
 
-      // React Native doesn't support ReadableStream, handle both web and native
+      // Handle streaming differently for web vs React Native
       if (response.body && typeof response.body.getReader === 'function') {
         // Web: Use ReadableStream
         const reader = response.body.getReader();
@@ -264,34 +351,37 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
           }
         }
       } else {
-        // React Native: Response doesn't support streaming
-        const responseText = await response.text();
-        console.log('📱 React Native follow-up response (no streaming):', responseText.substring(0, 200));
-
-        const lines = responseText.split('\n');
-        let fullText = '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                fullText += data.text;
-              } else if (data.error) {
-                throw new Error(data.error);
-              }
-            } catch (parseError) {
-              console.warn('⚠️ Failed to parse line:', line);
-            }
+        // React Native: Use XMLHttpRequest for streaming
+        await streamWithXHR(
+          response.url,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              messages: newConversation,
+              messageContext: true,
+              messageText: message.text,
+              messageLang: message.originalLanguage,
+              senderId: message.senderId,
+              senderNationality: senderNationality || 'Unknown',
+              userNationality: user?.nationality || 'Unknown',
+              hasPreGeneratedInsight: hasPreGeneratedInsight,
+              preGeneratedInsight: preGeneratedInsight || null,
+            }),
+          },
+          (text) => setStreamingText(text),
+          (finalText) => {
+            setConversation([...newConversation, {
+              role: 'assistant',
+              content: finalText
+            }]);
+            setStreamingText('');
+            setIsStreaming(false);
           }
-        }
-
-        setConversation([...newConversation, {
-          role: 'assistant',
-          content: fullText
-        }]);
-        setStreamingText('');
-        setIsStreaming(false);
+        );
       }
     } catch (error) {
       console.error('❌ Streaming error:', error);
@@ -369,10 +459,13 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
             </View>
           )}
 
-          {/* Initial loading */}
+          {/* Initial loading with thinking indicator */}
           {isStreaming && !streamingText && (
             <View style={[styles.messageBubble, styles.assistantBubble]}>
-              <ActivityIndicator size="small" color="#007AFF" />
+              <View style={styles.thinkingContainer}>
+                <ActivityIndicator size="small" color="#007AFF" style={styles.thinkingSpinner} />
+                <Text style={styles.thinkingText}>AI is thinking...</Text>
+              </View>
             </View>
           )}
         </ScrollView>
@@ -483,6 +576,19 @@ const styles = StyleSheet.create({
   },
   streamingIndicator: {
     marginTop: 8,
+  },
+  thinkingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  thinkingSpinner: {
+    marginRight: 4,
+  },
+  thinkingText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
   },
   inputContainer: {
     flexDirection: 'row',

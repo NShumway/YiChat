@@ -13,36 +13,7 @@ function getOpenAI(): OpenAI {
   return openai;
 }
 
-/**
- * Get relationship context for a specific contact
- */
-async function getRelationshipContext(
-  viewerUserId: string,
-  contactUserId: string
-): Promise<string | null> {
-  if (viewerUserId === contactUserId) {
-    return null;
-  }
-
-  try {
-    const db = admin.firestore();
-    const contactDoc = await db
-      .collection('users')
-      .doc(viewerUserId)
-      .collection('contacts')
-      .doc(contactUserId)
-      .get();
-
-    if (contactDoc.exists) {
-      const data = contactDoc.data();
-      return data?.relationship || null;
-    }
-    return null;
-  } catch (error) {
-    console.warn('⚠️ Failed to get relationship context:', error);
-    return null;
-  }
-}
+// Relationship context lookup removed for performance (saves ~150ms per request)
 
 /**
  * Cloud Function: Stream AI Chat
@@ -82,6 +53,9 @@ export const streamAIChat = functions
   }
 
   try {
+    const requestStart = Date.now();
+    console.log('🔍 streamAIChat: Request received');
+
     // Get auth token from header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -92,6 +66,7 @@ export const streamAIChat = functions
     const idToken = authHeader.split('Bearer ')[1];
 
     // Verify Firebase ID token
+    const authStart = Date.now();
     let decodedToken;
     try {
       decodedToken = await admin.auth().verifyIdToken(idToken);
@@ -101,8 +76,10 @@ export const streamAIChat = functions
       return;
     }
     const userId = decodedToken.uid;
+    console.log(`⏱️ Auth verification: ${Date.now() - authStart}ms`);
 
     // Rate limiting
+    const rateLimitStart = Date.now();
     try {
       await rateLimitMiddleware(userId, 'aiChat');
     } catch (rateLimitError: any) {
@@ -115,6 +92,7 @@ export const streamAIChat = functions
       }
       throw rateLimitError; // Re-throw other errors
     }
+    console.log(`⏱️ Rate limit check: ${Date.now() - rateLimitStart}ms`);
 
     // Parse request body
     const {
@@ -122,7 +100,6 @@ export const streamAIChat = functions
       messageContext,
       messageText,
       messageLang,
-      senderId,
       senderNationality,
       userNationality,
       hasPreGeneratedInsight,
@@ -131,57 +108,33 @@ export const streamAIChat = functions
 
     console.log(`🤖 AI Chat request from user ${userId}`);
 
-    // Get relationship context if discussing a specific message
-    let relationshipContext = '';
-    if (senderId && senderId !== userId) {
-      const relationship = await getRelationshipContext(userId, senderId);
-      if (relationship) {
-        relationshipContext = `\n\nRELATIONSHIP: You're viewing a message from your ${relationship}.`;
-      }
-    }
+    // Build system prompt - emphasize brevity for initial responses
+    // Skip relationship context lookup to save ~150ms
+    const isInitialAnalysis = !messages || messages.length === 0;
 
-    // Build system prompt
-    let systemPrompt = `You are a helpful AI assistant specializing in cross-cultural communication.
+    let systemPrompt = isInitialAnalysis
+      ? `You are a cross-cultural communication assistant. Be VERY brief - respond in 1-2 sentences only.
 
-Your expertise includes:
-- Explaining idioms, slang, and informal language
-- Providing cultural context for messages
-- Answering questions about communication nuances
-- Helping users understand tone and intent
+USER: ${userNationality || 'Unknown'} nationality`
+      : `You are a cross-cultural communication assistant. Keep responses concise (2-3 paragraphs).
 
-USER CONTEXT:
-- User's nationality: ${userNationality || 'Unknown'}
-${relationshipContext}`;
+USER: ${userNationality || 'Unknown'} nationality`;
 
     // If discussing a specific message, add message context
     if (messageContext && messageText) {
-      systemPrompt += `\n\nMESSAGE CONTEXT:
-- Message text: "${messageText}"
-- Message language: ${messageLang || 'Unknown'}
-- Sender nationality: ${senderNationality || 'Unknown'}`;
+      systemPrompt += `\n\nMESSAGE: "${messageText}" (${messageLang || 'Unknown'}, from ${senderNationality || 'Unknown'})`;
 
-      // If pre-generated insight exists, show it first
+      // If pre-generated insight exists, reference it
       if (hasPreGeneratedInsight && preGeneratedInsight) {
-        systemPrompt += `\n\nYou have already analyzed this message. Here's your previous analysis:\n"${preGeneratedInsight}"
-
-The user can now ask follow-up questions about this message or request additional clarification.`;
+        systemPrompt += `\n\nPrevious analysis: "${preGeneratedInsight}"\nAnswer follow-up questions concisely.`;
       } else {
-        systemPrompt += `\n\nThe user wants to understand this message better. Analyze it for:
-- Any idioms or slang that might need explanation
-- Cultural references that might be unfamiliar
-- Tone and emotional context
-- Any nuances that might be lost in translation
-
-Provide your analysis in a conversational, helpful tone.`;
+        systemPrompt += isInitialAnalysis
+          ? `\n\nGive ONE brief insight about idioms, slang, cultural context, or tone. Just 1-2 sentences.`
+          : `\n\nExplain: idioms, slang, cultural context, tone. Be brief and friendly.`;
       }
+    } else {
+      systemPrompt += `\n\nHelp with cross-cultural communication. Be conversational and concise.`;
     }
-
-    systemPrompt += `\n\nGUIDELINES:
-- Be conversational and friendly
-- Keep responses concise (2-3 paragraphs max unless asked for more)
-- Use examples when explaining idioms or cultural concepts
-- If you don't know something, say so honestly
-- Respect cultural differences and avoid stereotypes`;
 
     // Build conversation history
     const conversationMessages: any[] = [
@@ -193,16 +146,26 @@ Provide your analysis in a conversational, helpful tone.`;
       conversationMessages.push(...messages);
     }
 
+    console.log(`⏱️ Setup complete: ${Date.now() - requestStart}ms`);
     console.log('📡 Starting streaming response...');
 
+    // Determine max_tokens based on whether this is initial analysis or follow-up
+    // Initial analysis: Keep it brief (1-2 sentences)
+    // Follow-up questions: Allow more detail
+    const maxTokens = isInitialAnalysis ? 150 : 300;
+    console.log(`🎯 Max tokens: ${maxTokens} (${isInitialAnalysis ? 'initial' : 'follow-up'})`);
+
     // Call OpenAI with streaming (do this BEFORE writeHead so errors are caught before headers sent)
+    // Use gpt-4o-mini for faster responses (5-10x faster than gpt-4-turbo)
+    const openaiStart = Date.now();
     const stream = await getOpenAI().chat.completions.create({
-      model: 'gpt-4-turbo',
+      model: 'gpt-4o-mini',
       messages: conversationMessages,
       temperature: 0.7,
-      max_tokens: 1000,
+      max_tokens: maxTokens,
       stream: true,
     });
+    console.log(`⏱️ OpenAI stream started: ${Date.now() - openaiStart}ms`);
 
     // Set up streaming response (only after OpenAI call succeeds)
     res.writeHead(200, {
@@ -213,7 +176,13 @@ Provide your analysis in a conversational, helpful tone.`;
 
     // Stream response chunks
     let fullResponse = '';
+    let firstChunkTime = 0;
     for await (const chunk of stream) {
+      if (!firstChunkTime) {
+        firstChunkTime = Date.now();
+        console.log(`⏱️ First token: ${firstChunkTime - openaiStart}ms`);
+      }
+
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
         fullResponse += content;
@@ -226,7 +195,7 @@ Provide your analysis in a conversational, helpful tone.`;
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
 
-    console.log(`✅ Streamed ${fullResponse.length} characters`);
+    console.log(`✅ Streamed ${fullResponse.length} characters in ${Date.now() - requestStart}ms total`);
 
     // Increment rate limit after successful stream
     await incrementRateLimit(userId, 'aiChat');
