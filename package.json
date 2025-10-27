@@ -6,7 +6,12 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:functions": "cd functions && npm test",
+    "test:all": "npm test && npm run test:functions"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.24.0",
@@ -16,6 +21,7 @@
     "dotenv": "^17.2.3",
     "expo": "~54.0.18",
     "expo-auth-session": "~7.0.8",
+    "expo-camera": "^17.0.8",
     "expo-constants": "~18.0.10",
     "expo-crypto": "~15.0.7",
     "expo-dev-client": "^6.0.16",
@@ -35,7 +41,12 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
+    "jest": "^30.2.0",
+    "jest-expo": "^54.0.13",
     "typescript": "~5.9.2"
   },
   "private": true

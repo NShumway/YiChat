@@ -33,7 +33,8 @@ module.exports = {
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "CAMERA"
       ],
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       edgeToEdgeEnabled: true,
@@ -46,6 +47,12 @@ module.exports = {
       "expo-router",
       "expo-sqlite",
       "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow YiChat to access your camera to scan QR codes for connecting to the development server."
+        }
+      ],
       [
         "expo-notifications",
         {
