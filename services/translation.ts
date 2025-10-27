@@ -21,7 +21,12 @@ export function isSameLanguage(lang1: string, lang2: string): boolean {
 /**
  * Get human-readable language name from BCP 47 code
  */
-export function getLanguageName(languageCode: string): string {
+export function getLanguageName(languageCode: string | undefined | null): string {
+  // Handle null/undefined/empty
+  if (!languageCode) {
+    return 'Unknown';
+  }
+
   const names: { [key: string]: string } = {
     'en-US': 'English',
     'en-GB': 'English (UK)',
@@ -64,6 +69,15 @@ export async function detectLanguage(
   userLanguage: string
 ): Promise<string> {
   try {
+    // Debug: Check auth state before calling function
+    const { auth } = await import('./firebase');
+    if (!auth.currentUser) {
+      console.warn('⚠️ detectLanguage: No authenticated user, skipping');
+      return userLanguage;
+    }
+
+    console.log('🔍 detectLanguage: Auth user exists:', auth.currentUser.uid);
+
     const detectLang = httpsCallable(functions, 'detectLanguage');
     const result: HttpsCallableResult<{ language: string }> = await detectLang({
       text,
@@ -133,10 +147,22 @@ export async function translateMessage(
   }
 
   try {
+    // Debug: Check auth state before calling function
+    const { auth } = await import('./firebase');
+    if (!auth.currentUser) {
+      console.warn('⚠️ batchTranslate: No authenticated user, skipping translation');
+      return {
+        translations: {},
+        tone: null,
+        contextUsed: false,
+      };
+    }
+
     console.log(
       `🌐 Translating to ${uniqueTargetLanguages.length} languages:`,
       uniqueTargetLanguages.join(', ')
     );
+    console.log('🔍 batchTranslate: Auth user exists:', auth.currentUser.uid);
 
     const batchTranslate = httpsCallable(functions, 'batchTranslate');
     const result: HttpsCallableResult<{

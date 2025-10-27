@@ -29,7 +29,7 @@ import {
   deleteDoc,
   writeBatch,
 } from 'firebase/firestore';
-import { db } from '../../services/firebase';
+import { db, auth } from '../../services/firebase';
 import { dbOperations } from '../../services/database';
 import { useStore } from '../../store/useStore';
 import { Message } from '../../types/Message';
@@ -256,6 +256,18 @@ export default function ChatScreen() {
   // Memoized render function for performance
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
+      // Debug logging for messages without text
+      if (!item || !item.text) {
+        console.error('🔴 ChatScreen: Rendering message without text', {
+          messageId: item?.id,
+          hasText: !!item?.text,
+          messageType: item?.type,
+          senderId: item?.senderId,
+          timestamp: item?.timestamp,
+          fullMessage: item,
+        });
+      }
+
       return (
         <MessageBubble
           message={item}
@@ -474,7 +486,7 @@ export default function ChatScreen() {
         originalLanguage: user.preferredLanguage,
       };
 
-      if (connectionStatus === 'online') {
+      if (connectionStatus === 'online' && auth.currentUser) {
         try {
           const { prepareMessageWithTranslation } = await import('../../services/translation');
           translationData = await prepareMessageWithTranslation(

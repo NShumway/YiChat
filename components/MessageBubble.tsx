@@ -18,6 +18,20 @@ interface MessageBubbleProps {
 
 export const MessageBubble = memo(
   ({ message, isOwn, isGroupChat, chatParticipants, onAIChat }: MessageBubbleProps) => {
+    // Debug logging to catch undefined values
+    if (!message || !message.text) {
+      console.error('🔴 MessageBubble: Invalid message data:', {
+        messageExists: !!message,
+        messageId: message?.id,
+        messageText: message?.text,
+        messageType: message?.type,
+        originalLanguage: message?.originalLanguage,
+        hasTranslations: !!message?.translations,
+        isOwn,
+        isGroupChat,
+      });
+    }
+
     const [senderName, setSenderName] = useState<string>('');
     const [showReceiptsModal, setShowReceiptsModal] = useState(false);
     const [readByNames, setReadByNames] = useState<string[]>([]);
@@ -158,8 +172,20 @@ export const MessageBubble = memo(
     const hasTranslation = message.translations && message.translations[userLanguage];
     const isTranslated = hasTranslation && message.originalLanguage !== userLanguage;
     const displayText = showOriginal || !hasTranslation
-      ? message.text
-      : message.translations[userLanguage];
+      ? (message.text || '')
+      : (message.translations[userLanguage] || message.text || '');
+
+    // Debug logging for displayText
+    if (!displayText || displayText === '') {
+      console.warn('⚠️ MessageBubble: Empty displayText', {
+        messageId: message?.id,
+        messageText: message?.text,
+        showOriginal,
+        hasTranslation,
+        userLanguage,
+        translationValue: message.translations?.[userLanguage],
+      });
+    }
 
     // Check if AI insights exist for user's language
     const hasAIInsights = message.aiInsights && message.aiInsights[userLanguage];
