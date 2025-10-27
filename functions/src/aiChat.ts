@@ -83,11 +83,29 @@ export const streamAIChat = functions.https.onRequest(async (req, res) => {
     const idToken = authHeader.split('Bearer ')[1];
 
     // Verify Firebase ID token
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (authError) {
+      console.warn('⚠️ Auth token verification failed:', authError);
+      res.status(401).send('Unauthorized');
+      return;
+    }
     const userId = decodedToken.uid;
 
     // Rate limiting
-    await rateLimitMiddleware(userId, 'aiChat');
+    try {
+      await rateLimitMiddleware(userId, 'aiChat');
+    } catch (rateLimitError: any) {
+      if (rateLimitError.code === 'resource-exhausted') {
+        res.status(429).json({
+          error: rateLimitError.message,
+          details: rateLimitError.details,
+        });
+        return;
+      }
+      throw rateLimitError; // Re-throw other errors
+    }
 
     // Parse request body
     const {
@@ -166,22 +184,22 @@ Provide your analysis in a conversational, helpful tone.`;
       conversationMessages.push(...messages);
     }
 
-    // Set up streaming response
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
-
     console.log('📡 Starting streaming response...');
 
-    // Call OpenAI with streaming
+    // Call OpenAI with streaming (do this BEFORE writeHead so errors are caught before headers sent)
     const stream = await openai.chat.completions.create({
       model: 'gpt-4-turbo',
       messages: conversationMessages,
       temperature: 0.7,
       max_tokens: 1000,
       stream: true,
+    });
+
+    // Set up streaming response (only after OpenAI call succeeds)
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
     });
 
     // Stream response chunks

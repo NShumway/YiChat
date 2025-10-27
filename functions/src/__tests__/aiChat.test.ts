@@ -98,12 +98,17 @@ describe('AI Chat Streaming', () => {
       status: jest.fn().mockReturnThis(),
       send: jest.fn(),
       json: jest.fn(),
-      writeHead: jest.fn(),
+      writeHead: jest.fn(function(this: any) {
+        // Simulate headers being sent after writeHead
+        this.headersSent = true;
+        return this;
+      }) as any,
       write: jest.fn((data) => {
         mockWriteData.push(data);
         return true;
       }) as any,
       end: jest.fn(),
+      headersSent: false,
     };
   });
 
@@ -345,7 +350,9 @@ describe('AI Chat Streaming', () => {
       await streamAIChat(mockRequest as Request, mockResponse as Response);
 
       expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.send).toHaveBeenCalled();
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        error: 'AI chat failed. Please try again.'
+      });
     });
 
     it('should handle insufficient quota error', async () => {
