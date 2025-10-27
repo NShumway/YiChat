@@ -72,8 +72,8 @@ export default function NewChatScreen() {
           if (user.uid === currentUser.uid) return false; // Exclude self
           const searchLower = query.toLowerCase();
           return (
-            user.displayName.toLowerCase().includes(searchLower) ||
-            user.email.toLowerCase().includes(searchLower)
+            user.displayName?.toLowerCase().includes(searchLower) ||
+            user.email?.toLowerCase().includes(searchLower)
           );
         })
         .slice(0, 20); // Limit to 20 results
@@ -172,14 +172,13 @@ export default function NewChatScreen() {
     >
       <View style={styles.userAvatar}>
         <Text style={styles.userAvatarText}>
-          {item.displayName[0].toUpperCase()}
+          {item.displayName?.[0]?.toUpperCase() || '?'}
         </Text>
       </View>
       <View style={styles.userInfo}>
         <Text style={styles.userName}>{item.displayName}</Text>
         <Text style={styles.userEmail}>{item.email}</Text>
       </View>
-      {item.status === 'online' && <View style={styles.onlineDot} />}
     </TouchableOpacity>
   );
 

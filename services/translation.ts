@@ -1,8 +1,6 @@
-import { getFunctions, httpsCallable, HttpsCallableResult } from 'firebase/functions';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
-
-const functions = getFunctions();
-const db = getFirestore();
+import { httpsCallable, HttpsCallableResult } from 'firebase/functions';
+import { doc, getDoc } from 'firebase/firestore';
+import { functions, db } from './firebase';
 
 /**
  * Extract base language from BCP 47 tag

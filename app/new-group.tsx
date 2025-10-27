@@ -71,8 +71,8 @@ export default function NewGroupScreen() {
   const filteredUsers = allUsers.filter((user) => {
     const searchLower = searchQuery.toLowerCase();
     return (
-      user.displayName.toLowerCase().includes(searchLower) ||
-      user.email.toLowerCase().includes(searchLower)
+      user.displayName?.toLowerCase().includes(searchLower) ||
+      user.email?.toLowerCase().includes(searchLower)
     );
   });
 
@@ -159,7 +159,7 @@ export default function NewGroupScreen() {
       >
         <View style={styles.userAvatar}>
           <Text style={styles.userAvatarText}>
-            {item.displayName[0].toUpperCase()}
+            {item.displayName?.[0]?.toUpperCase() || '?'}
           </Text>
         </View>
         <View style={styles.userInfo}>

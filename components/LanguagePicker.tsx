@@ -128,6 +128,11 @@ const styles = StyleSheet.create({
   },
   picker: {
     height: Platform.OS === 'ios' ? 180 : 50,
+    ...Platform.select({
+      android: {
+        color: '#000',
+      },
+    }),
   },
   helpText: {
     fontSize: 13,

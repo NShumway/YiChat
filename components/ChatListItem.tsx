@@ -91,7 +91,7 @@ export function ChatListItem({ chat }: ChatListItemProps) {
       {/* Avatar */}
       <View style={[styles.avatar, chat.type === 'group' && styles.groupAvatar]}>
         <Text style={styles.avatarText}>
-          {chat.type === 'group' ? '👥' : otherUserName[0].toUpperCase()}
+          {chat.type === 'group' ? '👥' : otherUserName?.[0]?.toUpperCase() || '?'}
         </Text>
       </View>
 

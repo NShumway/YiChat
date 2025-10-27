@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
 import { getFirestore, enableNetwork, disableNetwork } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -36,6 +37,7 @@ export const auth = Platform.OS === 'web'
 // IMPORTANT: Specify the database name since it's not "(default)"
 export const db = getFirestore(app, 'yichat');
 export const storage = getStorage(app);
+export const functions = getFunctions(app);
 
 // Firestore offline persistence is automatic in React Native
 // No need to enable it explicitly

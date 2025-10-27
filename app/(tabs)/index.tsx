@@ -136,10 +136,10 @@ export default function ChatsScreen() {
           <Text style={styles.userName}>{user?.displayName}</Text>
           <View style={styles.languageContainer}>
             <Text style={styles.languageFlag}>
-              {getLanguageEmoji(user?.preferredLanguage || 'en')}
+              {getLanguageEmoji(user?.preferredLanguage?.split('-')[0] || 'en')}
             </Text>
             <Text style={styles.languageText}>
-              {user?.preferredLanguage?.toUpperCase()}
+              {user?.preferredLanguage?.split('-')[0]?.toUpperCase() || 'EN'}
             </Text>
           </View>
         </View>
