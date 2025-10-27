@@ -7,13 +7,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+// Select platform-specific Firebase credentials
+const getFirebaseApiKey = () => {
+  if (Platform.OS === 'web') return Constants.expoConfig?.extra?.firebaseApiKeyWeb;
+  if (Platform.OS === 'ios') return Constants.expoConfig?.extra?.firebaseApiKeyIos;
+  return Constants.expoConfig?.extra?.firebaseApiKeyAndroid;
+};
+
+const getFirebaseAppId = () => {
+  if (Platform.OS === 'web') return Constants.expoConfig?.extra?.firebaseAppIdWeb;
+  if (Platform.OS === 'ios') return Constants.expoConfig?.extra?.firebaseAppIdIos;
+  return Constants.expoConfig?.extra?.firebaseAppIdAndroid;
+};
+
 const firebaseConfig = {
-  apiKey: Constants.expoConfig?.extra?.firebaseApiKey,
+  apiKey: getFirebaseApiKey(),
   authDomain: Constants.expoConfig?.extra?.firebaseAuthDomain,
   projectId: Constants.expoConfig?.extra?.firebaseProjectId,
   storageBucket: Constants.expoConfig?.extra?.firebaseStorageBucket,
   messagingSenderId: Constants.expoConfig?.extra?.firebaseMessagingSenderId,
-  appId: Constants.expoConfig?.extra?.firebaseAppId,
+  appId: getFirebaseAppId(),
 };
 
 // Validate Firebase config
@@ -23,10 +36,16 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 }
 
 console.log('🔥 Initializing Firebase...');
+console.log('Platform:', Platform.OS);
 console.log('Project ID:', firebaseConfig.projectId);
+console.log('API Key (first 10 chars):', firebaseConfig.apiKey?.substring(0, 10));
+console.log('App ID:', firebaseConfig.appId);
+console.log('Full config:', JSON.stringify(firebaseConfig, null, 2));
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+console.log('Firebase app name:', app.name);
+console.log('Firebase app options:', JSON.stringify(app.options, null, 2));
 
 // Initialize Firebase Auth with platform-specific persistence
 export const auth = Platform.OS === 'web' 

@@ -3,11 +3,16 @@ import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { rateLimitMiddleware, incrementRateLimit } from './rateLimiting';
 import { getContextForTranslation } from './embeddings';
+import { getOpenAIKey } from './secrets';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: functions.config().openai?.key || process.env.OPENAI_API_KEY,
-});
+// Lazy-initialize OpenAI client (secrets only available at runtime)
+let openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    openai = new OpenAI({ apiKey: getOpenAIKey() });
+  }
+  return openai;
+}
 
 /**
  * Extract base language from BCP 47 tag
@@ -215,7 +220,7 @@ GUIDELINES FOR AI INSIGHTS:
   - "This cultural reference relates to [context]"`;
 
   // 4. Call OpenAI with structured output
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4-turbo',
     messages: [
       {

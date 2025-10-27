@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { rateLimitMiddleware, incrementRateLimit } from './rateLimiting';
+import { getOpenAIKey } from './secrets';
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -22,11 +23,14 @@ export { analyzeAndTranslate } from './aiAnalysis';
 export { streamAIChat } from './aiChat';
 export { autoAnalyzeAndTranslate, retryFailedTranslations } from './messageAnalysis';
 
-// Initialize OpenAI client
-// API key will be set via: firebase functions:config:set openai.key="sk-..."
-const openai = new OpenAI({
-  apiKey: functions.config().openai?.key || process.env.OPENAI_API_KEY,
-});
+// Lazy-initialize OpenAI client (secrets only available at runtime)
+let openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    openai = new OpenAI({ apiKey: getOpenAIKey() });
+  }
+  return openai;
+}
 
 /**
  * Cloud Function: Explain Slang
@@ -60,7 +64,7 @@ export const explainSlang = functions.https.onCall(async (request) => {
   try {
     console.log(`🔍 Explaining slang: "${text}" (${sourceLang})`);
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [
         {
@@ -148,7 +152,7 @@ export const getCulturalContext = functions.https.onCall(async (request) => {
       `🌍 Getting cultural context: ${senderNationality} → ${userNationality}`
     );
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [
         {

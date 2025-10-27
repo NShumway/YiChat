@@ -229,20 +229,21 @@ export const dbOperations = {
       const message = messages[0];
       database.runSync('DELETE FROM messages WHERE id = ?', [oldId]);
       database.runSync(
-        'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           newId,
           message.chatId,
           message.senderId,
           message.text,
-          message.originalLanguage,
-          message.translations,
-          message.tone,
+          message.originalLanguage || null,
+          message.translations || null,
+          message.aiInsights || null,
+          message.tone || null,
           message.timestamp,
           message.status,
           message.readBy,
-          message.mediaURL,
-          message.localOnly,
+          message.mediaURL || null,
+          message.localOnly || 0,
           message.embedded || 0
         ]
       );

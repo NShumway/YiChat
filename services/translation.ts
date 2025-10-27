@@ -78,15 +78,39 @@ export async function detectLanguage(
 
     console.log('🔍 detectLanguage: Auth user exists:', auth.currentUser.uid);
 
-    const detectLang = httpsCallable(functions, 'detectLanguage');
-    const result: HttpsCallableResult<{ language: string }> = await detectLang({
-      text,
-      userLanguage,
+    // Get auth token
+    const token = await auth.currentUser.getIdToken();
+    console.log('✅ Auth token retrieved, length:', token.length);
+    console.log('Token first 20 chars:', token.substring(0, 20));
+
+    // Call HTTPS endpoint directly (not callable function)
+    const functionUrl = 'https://us-central1-yichat-3f1b4.cloudfunctions.net/detectLanguage';
+    console.log('📞 Calling detectLanguage HTTPS endpoint:', functionUrl);
+
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        text,
+        userLanguage,
+      }),
     });
 
-    return result.data.language;
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('❌ HTTP error:', response.status, errorData);
+      throw new Error(errorData.error || `HTTP error ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Cloud Function returned successfully:', result.language);
+    return result.language;
   } catch (error: any) {
     console.error('❌ Language detection failed:', error);
+    console.error('Error message:', error.message);
 
     // Fallback: return user's language
     return userLanguage;

@@ -82,14 +82,23 @@ The app uses a **three-layer data architecture** for resilience and performance:
 ### Firebase Configuration
 
 - Config loaded from environment variables via `expo-constants`
-- Required variables in `.env.local`:
-  - `EXPO_PUBLIC_FIREBASE_API_KEY`
-  - `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`
-  - `EXPO_PUBLIC_FIREBASE_PROJECT_ID`
-  - `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`
-  - `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-  - `EXPO_PUBLIC_FIREBASE_APP_ID`
+- **Platform-Specific Credentials**: Each platform (web/Android/iOS) requires its own API key and App ID
+- Required variables in `.env.local` (copy from `.env.example`):
+  - `FIREBASE_API_KEY_WEB` - Web app API key
+  - `FIREBASE_API_KEY_ANDROID` - Android app API key
+  - `FIREBASE_API_KEY_IOS` - iOS app API key
+  - `FIREBASE_APP_ID_WEB` - Web app ID (format: `1:xxx:web:xxx`)
+  - `FIREBASE_APP_ID_ANDROID` - Android app ID (format: `1:xxx:android:xxx`)
+  - `FIREBASE_APP_ID_IOS` - iOS app ID (format: `1:xxx:ios:xxx`)
+  - `FIREBASE_AUTH_DOMAIN` - Shared across platforms
+  - `FIREBASE_PROJECT_ID` - Shared across platforms
+  - `FIREBASE_STORAGE_BUCKET` - Shared across platforms
+  - `FIREBASE_MESSAGING_SENDER_ID` - Shared across platforms
+- **Why Platform-Specific?** Cloud Functions verify the calling app using App ID. Using wrong credentials (e.g., web on Android) causes "app verification missing" errors with 401 status
+- **Security**: `.env.local` is in `.gitignore` - NEVER commit it! Firebase API keys/App IDs are public by design (protected by Security Rules)
+- **Implementation**: `services/firebase.ts` selects correct credentials based on `Platform.OS`
 - **Critical**: Database name is `'yichat'`, not the default database
+- **Critical**: Cloud Functions region is `'us-central1'` - must match deployment region
 - Auth persistence: AsyncStorage on mobile, browser storage on web
 
 ### Routing

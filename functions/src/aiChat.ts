@@ -2,11 +2,16 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { rateLimitMiddleware, incrementRateLimit } from './rateLimiting';
+import { getOpenAIKey } from './secrets';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: functions.config().openai?.key || process.env.OPENAI_API_KEY,
-});
+// Lazy-initialize OpenAI client (secrets only available at runtime)
+let openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    openai = new OpenAI({ apiKey: getOpenAIKey() });
+  }
+  return openai;
+}
 
 /**
  * Get relationship context for a specific contact
@@ -187,7 +192,7 @@ Provide your analysis in a conversational, helpful tone.`;
     console.log('📡 Starting streaming response...');
 
     // Call OpenAI with streaming (do this BEFORE writeHead so errors are caught before headers sent)
-    const stream = await openai.chat.completions.create({
+    const stream = await getOpenAI().chat.completions.create({
       model: 'gpt-4-turbo',
       messages: conversationMessages,
       temperature: 0.7,

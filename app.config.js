@@ -63,12 +63,16 @@ module.exports = {
       ]
     ],
     extra: {
-      firebaseApiKey: process.env.FIREBASE_API_KEY,
+      firebaseApiKeyWeb: process.env.FIREBASE_API_KEY_WEB,
+      firebaseApiKeyAndroid: process.env.FIREBASE_API_KEY_ANDROID,
+      firebaseApiKeyIos: process.env.FIREBASE_API_KEY_IOS,
       firebaseAuthDomain: process.env.FIREBASE_AUTH_DOMAIN,
       firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
       firebaseStorageBucket: process.env.FIREBASE_STORAGE_BUCKET,
       firebaseMessagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-      firebaseAppId: process.env.FIREBASE_APP_ID,
+      firebaseAppIdWeb: process.env.FIREBASE_APP_ID_WEB,
+      firebaseAppIdAndroid: process.env.FIREBASE_APP_ID_ANDROID,
+      firebaseAppIdIos: process.env.FIREBASE_APP_ID_IOS,
       // Google OAuth Client IDs (get from Google Cloud Console)
       googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID,
       googleIosClientId: process.env.GOOGLE_IOS_CLIENT_ID,

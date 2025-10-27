@@ -1,12 +1,18 @@
 import * as functions from 'firebase-functions/v1';
+import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { rateLimitMiddleware, incrementRateLimit } from './rateLimiting';
 import { getContextForTranslation } from './embeddings';
+import { getOpenAIKey } from './secrets';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: functions.config().openai?.key || process.env.OPENAI_API_KEY,
-});
+// Lazy-initialize OpenAI client (secrets only available at runtime)
+let openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    openai = new OpenAI({ apiKey: getOpenAIKey() });
+  }
+  return openai;
+}
 
 /**
  * Extract base language from BCP 47 tag
@@ -33,33 +39,54 @@ function isSameLanguage(lang1: string, lang2: string): boolean {
  * @param data.userLanguage - User's preferred language (for context)
  * @returns Detected language in BCP 47 format
  */
-export const detectLanguage = functions.https.onCall(async (request) => {
-  // 1. Check authentication
-  if (!request.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'User must be logged in'
-    );
-  }
+export const detectLanguage = functions
+  .runWith({
+    secrets: ['OPENAI_API_KEY'],
+  })
+  .https.onRequest(async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  // 2. Rate limiting (use translation limit since it's similar cost)
-  await rateLimitMiddleware(request.auth.uid, 'translation');
-
-  // 3. Validate input
-  const { text, userLanguage } = request.data;
-
-  if (!text || typeof text !== 'string') {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Text is required and must be a string'
-    );
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
   }
 
   try {
+    console.log('🔍 detectLanguage called');
+
+    // 1. Verify Firebase ID token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('❌ No authorization header');
+      res.status(401).json({ error: 'Unauthorized - No token provided' });
+      return;
+    }
+
+    const idToken = authHeader.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    console.log('✅ Auth check passed, uid:', uid);
+
+    // 2. Rate limiting
+    await rateLimitMiddleware(uid, 'translation');
+
+    // 3. Validate input
+    const { text, userLanguage } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      console.error('❌ Invalid input: text is required');
+      res.status(400).json({ error: 'Text is required and must be a string' });
+      return;
+    }
+
     console.log(`🔍 Detecting language for: "${text.substring(0, 50)}..."`);
 
     // 4. Call OpenAI to detect language
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [
         {
@@ -88,24 +115,33 @@ Examples:
     const detectedLanguage = response.choices[0]?.message?.content?.trim();
 
     if (!detectedLanguage) {
-      throw new Error('Empty language detection result');
+      console.error('❌ Empty language detection result from OpenAI');
+      res.status(500).json({ error: 'Language detection failed - empty result' });
+      return;
     }
 
     console.log(`✅ Detected language: ${detectedLanguage}`);
 
-    await incrementRateLimit(request.auth.uid, 'translation');
+    // 5. Increment rate limit and return success
+    await incrementRateLimit(uid, 'translation');
 
-    return {
+    res.status(200).json({
       language: detectedLanguage,
       text,
-    };
+    });
   } catch (error: any) {
     console.error('❌ Language detection error:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error code:', error.code);
 
-    throw new functions.https.HttpsError(
-      'internal',
-      'Language detection failed. Please try again.'
-    );
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Language detection failed. Please try again.',
+        details: error.message,
+      });
+    }
   }
 });
 
@@ -122,7 +158,11 @@ Examples:
  * @param data.senderId - Sender ID (for RAG context)
  * @returns Object with translations for each language
  */
-export const batchTranslate = functions.https.onCall(async (request) => {
+export const batchTranslate = functions
+  .runWith({
+    secrets: ['OPENAI_API_KEY', 'PINECONE_API_KEY'],
+  })
+  .https.onCall(async (request) => {
   // 1. Check authentication
   if (!request.auth) {
     throw new functions.https.HttpsError(
@@ -215,7 +255,7 @@ Format your response as JSON:
 }`;
 
     // Call OpenAI once for all translations
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [
         {

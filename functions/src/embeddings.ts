@@ -1,30 +1,22 @@
-import * as functions from 'firebase-functions';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
+import { getOpenAIKey, getPineconeKey } from './secrets';
 
-// Initialize Pinecone client
-// API key will be set via: firebase functions:config:set pinecone.key="pc-..."
+// Initialize clients with Secret Manager
+// See SECRETS_MIGRATION.md for setup instructions
 let pinecone: Pinecone | null = null;
 let openai: OpenAI | null = null;
 
 function initializePinecone() {
   if (!pinecone) {
-    const apiKey = functions.config().pinecone?.key || process.env.PINECONE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Pinecone API key not configured');
-    }
-    pinecone = new Pinecone({ apiKey });
+    pinecone = new Pinecone({ apiKey: getPineconeKey() });
   }
   return pinecone;
 }
 
 function initializeOpenAI() {
   if (!openai) {
-    const apiKey = functions.config().openai?.key || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
-    }
-    openai = new OpenAI({ apiKey });
+    openai = new OpenAI({ apiKey: getOpenAIKey() });
   }
   return openai;
 }
