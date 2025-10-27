@@ -318,7 +318,7 @@ export const MessageBubble = memo(
       </>
     );
   },
-  // Only re-render if message ID, text, status, readBy, or chatParticipants changes
+  // Only re-render if message ID, text, status, readBy, translations, or chatParticipants changes
   (prevProps, nextProps) => {
     // Deep comparison of readBy object to detect actual changes
     const prevReadBy = JSON.stringify(prevProps.message.readBy || {});
@@ -328,14 +328,25 @@ export const MessageBubble = memo(
     const prevParticipants = JSON.stringify(prevProps.chatParticipants || []);
     const nextParticipants = JSON.stringify(nextProps.chatParticipants || []);
 
+    // Deep comparison of translations to detect async translation updates
+    const prevTranslations = JSON.stringify(prevProps.message.translations || {});
+    const nextTranslations = JSON.stringify(nextProps.message.translations || {});
+
+    // Deep comparison of aiInsights to detect async AI updates
+    const prevAIInsights = JSON.stringify(prevProps.message.aiInsights || {});
+    const nextAIInsights = JSON.stringify(nextProps.message.aiInsights || {});
+
     return (
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.text === nextProps.message.text &&
       prevProps.message.status === nextProps.message.status &&
+      prevProps.message.tone === nextProps.message.tone &&
       prevProps.isOwn === nextProps.isOwn &&
       prevProps.isGroupChat === nextProps.isGroupChat &&
       prevReadBy === nextReadBy && // Deep comparison of readBy
-      prevParticipants === nextParticipants // Deep comparison of chatParticipants
+      prevParticipants === nextParticipants && // Deep comparison of chatParticipants
+      prevTranslations === nextTranslations && // Deep comparison of translations
+      prevAIInsights === nextAIInsights // Deep comparison of aiInsights
     );
   }
 );
