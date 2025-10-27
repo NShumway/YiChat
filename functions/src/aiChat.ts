@@ -61,7 +61,11 @@ async function getRelationshipContext(
  * @param data.preGeneratedInsight - Pre-generated AI insight (if available)
  * @returns Streaming text response
  */
-export const streamAIChat = functions.https.onRequest(async (req, res) => {
+export const streamAIChat = functions
+  .runWith({
+    secrets: ['OPENAI_API_KEY'],
+  })
+  .https.onRequest(async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');

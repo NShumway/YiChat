@@ -162,51 +162,73 @@ export const batchTranslate = functions
   .runWith({
     secrets: ['OPENAI_API_KEY', 'PINECONE_API_KEY'],
   })
-  .https.onCall(async (request) => {
-  // 1. Check authentication
-  if (!request.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'User must be logged in'
-    );
-  }
+  .https.onRequest(async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  // 2. Validate input
-  const { text, sourceLang, targetLanguages, chatId, senderId } = request.data;
-
-  if (!text || typeof text !== 'string') {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Text is required and must be a string'
-    );
-  }
-
-  if (!Array.isArray(targetLanguages) || targetLanguages.length === 0) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Target languages must be a non-empty array'
-    );
-  }
-
-  // Filter out same language
-  const uniqueTargetLanguages = [...new Set(targetLanguages)].filter(
-    (lang) => !isSameLanguage(sourceLang, lang)
-  );
-
-  if (uniqueTargetLanguages.length === 0) {
-    // All target languages are same as source
-    return {
-      translations: {},
-      tone: null,
-    };
-  }
-
-  // Rate limit based on number of translations
-  for (let i = 0; i < uniqueTargetLanguages.length; i++) {
-    await rateLimitMiddleware(request.auth.uid, 'translation');
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
   }
 
   try {
+    console.log('🌐 batchTranslate called');
+
+    // 1. Verify Firebase ID token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('❌ No authorization header');
+      res.status(401).json({ error: 'Unauthorized - No token provided' });
+      return;
+    }
+
+    const idToken = authHeader.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    console.log('✅ Auth check passed, uid:', uid);
+
+    // 2. Validate input
+    const { text, sourceLang, targetLanguages, chatId, senderId } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      console.error('❌ Invalid input: text is required');
+      res.status(400).json({ error: 'Text is required and must be a string' });
+      return;
+    }
+
+    if (!Array.isArray(targetLanguages) || targetLanguages.length === 0) {
+      console.error('❌ Invalid input: targetLanguages must be non-empty array');
+      res.status(400).json({ error: 'Target languages must be a non-empty array' });
+      return;
+    }
+
+    // Filter out same language
+    const uniqueTargetLanguages = [...new Set(targetLanguages)].filter(
+      (lang) => !isSameLanguage(sourceLang, lang)
+    );
+
+    if (uniqueTargetLanguages.length === 0) {
+      // All target languages are same as source
+      res.status(200).json({
+        translations: {},
+        tone: null,
+        sourceLang,
+        contextUsed: false,
+        contextMessageCount: 0,
+        contextTokenCount: 0,
+        model: 'gpt-4-turbo',
+      });
+      return;
+    }
+
+    // Rate limit based on number of translations
+    for (let i = 0; i < uniqueTargetLanguages.length; i++) {
+      await rateLimitMiddleware(uid, 'translation');
+    }
+
     console.log(
       `🌐 Batch translating to ${uniqueTargetLanguages.length} languages: ${uniqueTargetLanguages.join(', ')}`
     );
@@ -291,10 +313,10 @@ Format your response as JSON:
 
     // Increment rate limit for each translation
     for (let i = 0; i < uniqueTargetLanguages.length; i++) {
-      await incrementRateLimit(request.auth.uid, 'translation');
+      await incrementRateLimit(uid, 'translation');
     }
 
-    return {
+    res.status(200).json({
       translations,
       tone,
       sourceLang,
@@ -302,20 +324,26 @@ Format your response as JSON:
       contextMessageCount: contextInfo.messageCount,
       contextTokenCount: contextInfo.tokenCount,
       model: 'gpt-4-turbo',
-    };
+    });
   } catch (error: any) {
     console.error('❌ Batch translation error:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error code:', error.code);
 
-    if (error.code === 'insufficient_quota') {
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        'Translation service temporarily unavailable. Please try again later.'
-      );
+    if (!res.headersSent) {
+      if (error.code === 'insufficient_quota') {
+        res.status(429).json({
+          error: 'Translation service temporarily unavailable. Please try again later.',
+          details: error.message,
+        });
+      } else {
+        res.status(500).json({
+          error: 'Batch translation failed. Please try again.',
+          details: error.message,
+        });
+      }
     }
-
-    throw new functions.https.HttpsError(
-      'internal',
-      'Batch translation failed. Please try again.'
-    );
   }
 });

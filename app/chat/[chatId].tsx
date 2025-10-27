@@ -197,6 +197,16 @@ export default function ChatScreen() {
         // Only process changes, not full dataset
         snapshot.docChanges().forEach((change) => {
           const messageData = change.doc.data();
+
+          console.log('📥 Received message from Firestore:', {
+            id: change.doc.id,
+            text: messageData.text,
+            originalLanguage: messageData.originalLanguage,
+            hasTranslations: !!messageData.translations,
+            translationKeys: messageData.translations ? Object.keys(messageData.translations) : [],
+            hasTone: !!messageData.tone,
+          });
+
           const message: Message = {
             id: change.doc.id,
             chatId: messageData.chatId,
@@ -208,6 +218,11 @@ export default function ChatScreen() {
             readBy: messageData.readBy || {},
             mediaURL: messageData.mediaURL,
             localOnly: false,
+            // ADD MISSING FIELDS!
+            translations: messageData.translations,
+            tone: messageData.tone,
+            aiInsights: messageData.aiInsights,
+            embedded: messageData.embedded,
           };
 
           if (change.type === 'added' || change.type === 'modified') {
@@ -488,6 +503,13 @@ export default function ChatScreen() {
 
       if (connectionStatus === 'online' && auth.currentUser) {
         try {
+          console.log('🌐 Preparing translation for:', {
+            text: text.substring(0, 50),
+            chatId,
+            senderId: user.uid,
+            userLanguage: user.preferredLanguage,
+            participants: chatData.participants,
+          });
           const { prepareMessageWithTranslation } = await import('../../services/translation');
           translationData = await prepareMessageWithTranslation(
             text,
@@ -496,11 +518,17 @@ export default function ChatScreen() {
             user.preferredLanguage,
             chatData.participants
           );
-          console.log('✅ Translation prepared:', translationData);
+          console.log('✅ Translation prepared:', JSON.stringify(translationData, null, 2));
         } catch (translationError: any) {
           console.warn('⚠️ Translation failed, sending without translation:', translationError.message);
+          console.error('Translation error details:', translationError);
           // Continue without translation - don't block message sending
         }
+      } else {
+        console.log('⚠️ Skipping translation:', {
+          connectionStatus,
+          hasAuthUser: !!auth.currentUser,
+        });
       }
 
       // 6. Send to Firestore (async, don't block UI)
@@ -517,12 +545,23 @@ export default function ChatScreen() {
       // Add translation fields if present
       if (translationData.translations && Object.keys(translationData.translations).length > 0) {
         messageData.translations = translationData.translations;
+        console.log('✅ Added translations to messageData:', Object.keys(translationData.translations));
+      } else {
+        console.log('⚠️ No translations to add');
       }
       if (translationData.tone) {
         messageData.tone = translationData.tone;
+        console.log('✅ Added tone to messageData:', translationData.tone);
       }
       // Mark as not embedded yet (batch job will do it later)
       messageData.embedded = false;
+
+      console.log('📤 Sending to Firestore:', {
+        hasTranslations: !!messageData.translations,
+        translationKeys: messageData.translations ? Object.keys(messageData.translations) : [],
+        originalLanguage: messageData.originalLanguage,
+        hasTone: !!messageData.tone,
+      });
 
       const docRef = await addDoc(collection(db, 'messages'), messageData);
 

@@ -175,6 +175,20 @@ export const MessageBubble = memo(
       ? (message.text || '')
       : (message.translations[userLanguage] || message.text || '');
 
+    // Debug logging - always log for translation debugging
+    console.log('💬 MessageBubble rendering:', {
+      messageId: message?.id,
+      messageText: message?.text,
+      originalLanguage: message?.originalLanguage,
+      userLanguage,
+      hasTranslation,
+      isTranslated,
+      availableTranslations: message.translations ? Object.keys(message.translations) : [],
+      translationForUser: message.translations?.[userLanguage],
+      displayText: displayText.substring(0, 50),
+      showOriginal,
+    });
+
     // Debug logging for displayText
     if (!displayText || displayText === '') {
       console.warn('⚠️ MessageBubble: Empty displayText', {
@@ -205,24 +219,28 @@ export const MessageBubble = memo(
         >
           <View style={[styles.bubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
             {/* AI Insight indicator in top-right corner */}
-            {hasAIInsights && (
+            {hasAIInsights ? (
               <TouchableOpacity
                 style={styles.aiInsightIndicator}
-                onPress={() => onAIChat?.(message)}
+                onPress={() => {
+                  if (onAIChat) {
+                    onAIChat(message);
+                  }
+                }}
               >
                 <Text style={styles.aiInsightIcon}>❗</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
 
-            {isGroupChat && !isOwn && senderName && (
+            {isGroupChat && !isOwn && senderName ? (
               <Text style={styles.senderName}>{senderName}</Text>
-            )}
+            ) : null}
             <Text style={[styles.text, isOwn ? styles.ownText : styles.otherText]}>
               {displayText}
             </Text>
 
             {/* Translation indicator and toggle */}
-            {isTranslated && (
+            {isTranslated ? (
               <TouchableOpacity
                 onPress={() => setShowOriginal(!showOriginal)}
                 style={styles.translationIndicator}
@@ -234,30 +252,25 @@ export const MessageBubble = memo(
                   }
                 </Text>
               </TouchableOpacity>
-            )}
+            ) : null}
 
-            {/* Tone indicator (optional) */}
-            {message.tone && !isOwn && (
-              <Text style={[styles.toneIndicator, isOwn && styles.toneIndicatorOwn]}>
-                Tone: {message.tone}
-              </Text>
-            )}
+            {/* Tone indicator removed - not needed in production */}
 
             <View style={styles.footer}>
               <Text style={[styles.time, isOwn ? styles.ownTime : styles.otherTime]}>
                 {formatTime(message.timestamp)}
               </Text>
-              {isOwn && !isGroupChat && (
+              {isOwn && !isGroupChat ? (
                 <Text style={[styles.status, isRead() && styles.statusRead]}>
                   {getStatusIcon()}
                 </Text>
-              )}
+              ) : null}
             </View>
           </View>
         </Pressable>
 
         {/* Group chat read receipt - tappable for details */}
-        {groupReadReceiptText && (
+        {groupReadReceiptText ? (
           <Pressable
             onPress={() => setShowReceiptsModal(true)}
             style={[styles.container, styles.ownContainer]}
@@ -266,10 +279,10 @@ export const MessageBubble = memo(
               {groupReadReceiptText}
             </Text>
           </Pressable>
-        )}
+        ) : null}
 
         {/* Read receipts modal */}
-        {isGroupChat && isOwn && chatParticipants && (
+        {isGroupChat && isOwn && chatParticipants ? (
           <ReadReceiptsModal
             visible={showReceiptsModal}
             onClose={() => setShowReceiptsModal(false)}
@@ -277,7 +290,7 @@ export const MessageBubble = memo(
             participants={chatParticipants}
             senderId={message.senderId}
           />
-        )}
+        ) : null}
       </>
     );
   },

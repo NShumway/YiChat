@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useRef, useEffect } from 'react';
 import { Message } from '../types/Message';
 import { useStore } from '../store/useStore';
@@ -98,44 +99,76 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
       );
 
       if (!response.ok) {
-        throw new Error('Stream failed');
+        const errorText = await response.text();
+        console.error('❌ Stream failed:', response.status, errorText);
+        throw new Error(`Stream failed: ${response.status} - ${errorText}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No reader available');
-      }
+      // React Native doesn't support ReadableStream, so we need to handle the response differently
+      // Check if we're on web or native
+      if (response.body && typeof response.body.getReader === 'function') {
+        // Web: Use ReadableStream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
 
-      const decoder = new TextDecoder();
-      let fullText = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            if (data.text) {
-              fullText += data.text;
-              setStreamingText(fullText);
-            } else if (data.done) {
-              // Stream complete
-              setConversation([{
-                role: 'assistant',
-                content: fullText
-              }]);
-              setStreamingText('');
-              setIsStreaming(false);
-              return;
-            } else if (data.error) {
-              throw new Error(data.error);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                fullText += data.text;
+                setStreamingText(fullText);
+              } else if (data.done) {
+                setConversation([{
+                  role: 'assistant',
+                  content: fullText
+                }]);
+                setStreamingText('');
+                setIsStreaming(false);
+                return;
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
             }
           }
         }
+      } else {
+        // React Native: Response doesn't support streaming, get full text
+        const responseText = await response.text();
+        console.log('📱 React Native response (no streaming):', responseText.substring(0, 200));
+
+        // Parse SSE format manually
+        const lines = responseText.split('\n');
+        let fullText = '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                fullText += data.text;
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              console.warn('⚠️ Failed to parse line:', line);
+            }
+          }
+        }
+
+        setConversation([{
+          role: 'assistant',
+          content: fullText
+        }]);
+        setStreamingText('');
+        setIsStreaming(false);
       }
     } catch (error) {
       console.error('❌ Streaming error:', error);
@@ -191,43 +224,74 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
       );
 
       if (!response.ok) {
-        throw new Error('Stream failed');
+        const errorText = await response.text();
+        console.error('❌ Follow-up stream failed:', response.status, errorText);
+        throw new Error(`Stream failed: ${response.status} - ${errorText}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No reader available');
-      }
+      // React Native doesn't support ReadableStream, handle both web and native
+      if (response.body && typeof response.body.getReader === 'function') {
+        // Web: Use ReadableStream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
 
-      const decoder = new TextDecoder();
-      let fullText = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            if (data.text) {
-              fullText += data.text;
-              setStreamingText(fullText);
-            } else if (data.done) {
-              setConversation([...newConversation, {
-                role: 'assistant',
-                content: fullText
-              }]);
-              setStreamingText('');
-              setIsStreaming(false);
-              return;
-            } else if (data.error) {
-              throw new Error(data.error);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                fullText += data.text;
+                setStreamingText(fullText);
+              } else if (data.done) {
+                setConversation([...newConversation, {
+                  role: 'assistant',
+                  content: fullText
+                }]);
+                setStreamingText('');
+                setIsStreaming(false);
+                return;
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
             }
           }
         }
+      } else {
+        // React Native: Response doesn't support streaming
+        const responseText = await response.text();
+        console.log('📱 React Native follow-up response (no streaming):', responseText.substring(0, 200));
+
+        const lines = responseText.split('\n');
+        let fullText = '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                fullText += data.text;
+              } else if (data.error) {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              console.warn('⚠️ Failed to parse line:', line);
+            }
+          }
+        }
+
+        setConversation([...newConversation, {
+          role: 'assistant',
+          content: fullText
+        }]);
+        setStreamingText('');
+        setIsStreaming(false);
       }
     } catch (error) {
       console.error('❌ Streaming error:', error);
@@ -247,13 +311,14 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
       onRequestClose={onClose}
       presentationStyle="pageSheet"
     >
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-      >
-        {/* Header */}
-        <View style={styles.header}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+        >
+          {/* Header */}
+          <View style={styles.header}>
           <Text style={styles.headerTitle}>AI Chat</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Text style={styles.closeButtonText}>✕</Text>
@@ -335,12 +400,17 @@ export const AIChatModal = ({ visible, onClose, message, senderNationality }: AI
             <Text style={styles.sendButtonText}>Send</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',

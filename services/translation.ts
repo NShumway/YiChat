@@ -188,25 +188,38 @@ export async function translateMessage(
     );
     console.log('🔍 batchTranslate: Auth user exists:', auth.currentUser.uid);
 
-    const batchTranslate = httpsCallable(functions, 'batchTranslate');
-    const result: HttpsCallableResult<{
-      translations: { [language: string]: string };
-      tone: string;
-      contextUsed: boolean;
-    }> = await batchTranslate({
-      text,
-      sourceLang,
-      targetLanguages: uniqueTargetLanguages,
-      chatId,
-      senderId,
+    // Get auth token
+    const token = await auth.currentUser.getIdToken();
+    const functionUrl = 'https://us-central1-yichat-3f1b4.cloudfunctions.net/batchTranslate';
+
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        text,
+        sourceLang,
+        targetLanguages: uniqueTargetLanguages,
+        chatId,
+        senderId,
+      }),
     });
 
-    console.log('✅ Translation complete:', result.data);
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('❌ HTTP error:', response.status, errorData);
+      throw new Error(errorData.error || `HTTP error ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Translation complete:', result);
 
     return {
-      translations: result.data.translations || {},
-      tone: result.data.tone || null,
-      contextUsed: result.data.contextUsed || false,
+      translations: result.translations || {},
+      tone: result.tone || null,
+      contextUsed: result.contextUsed || false,
     };
   } catch (error: any) {
     console.error('❌ Translation failed:', error);
