@@ -17,6 +17,11 @@ export {
 // Export async message embedding (Firestore trigger)
 export { autoEmbedMessage, retryFailedEmbeddings } from './messageEmbedding';
 
+// Export AI analysis and chat features
+export { analyzeAndTranslate } from './aiAnalysis';
+export { streamAIChat } from './aiChat';
+export { autoAnalyzeAndTranslate, retryFailedTranslations } from './messageAnalysis';
+
 // Initialize OpenAI client
 // API key will be set via: firebase functions:config:set openai.key="sk-..."
 const openai = new OpenAI({

@@ -28,6 +28,11 @@ const RATE_LIMITS = {
     maxPerHour: 50,
     maxPerDay: 200,
   },
+  aiChat: {
+    maxPerMinute: 15,
+    maxPerHour: 100,
+    maxPerDay: 300,
+  },
 };
 
 type RateLimitFeature = keyof typeof RATE_LIMITS;

@@ -13,10 +13,11 @@ interface MessageBubbleProps {
   isOwn: boolean;
   isGroupChat?: boolean;
   chatParticipants?: string[];
+  onAIChat?: (message: Message) => void;
 }
 
 export const MessageBubble = memo(
-  ({ message, isOwn, isGroupChat, chatParticipants }: MessageBubbleProps) => {
+  ({ message, isOwn, isGroupChat, chatParticipants, onAIChat }: MessageBubbleProps) => {
     const [senderName, setSenderName] = useState<string>('');
     const [showReceiptsModal, setShowReceiptsModal] = useState(false);
     const [readByNames, setReadByNames] = useState<string[]>([]);
@@ -160,10 +161,33 @@ export const MessageBubble = memo(
       ? message.text
       : message.translations[userLanguage];
 
+    // Check if AI insights exist for user's language
+    const hasAIInsights = message.aiInsights && message.aiInsights[userLanguage];
+
+    // Handle long press to open AI chat
+    const handleLongPress = () => {
+      if (onAIChat) {
+        onAIChat(message);
+      }
+    };
+
     return (
       <>
-        <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
+        <Pressable
+          onLongPress={handleLongPress}
+          style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}
+        >
           <View style={[styles.bubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
+            {/* AI Insight indicator in top-right corner */}
+            {hasAIInsights && (
+              <TouchableOpacity
+                style={styles.aiInsightIndicator}
+                onPress={() => onAIChat?.(message)}
+              >
+                <Text style={styles.aiInsightIcon}>❗</Text>
+              </TouchableOpacity>
+            )}
+
             {isGroupChat && !isOwn && senderName && (
               <Text style={styles.senderName}>{senderName}</Text>
             )}
@@ -204,7 +228,7 @@ export const MessageBubble = memo(
               )}
             </View>
           </View>
-        </View>
+        </Pressable>
 
         {/* Group chat read receipt - tappable for details */}
         {groupReadReceiptText && (
@@ -354,6 +378,26 @@ const styles = StyleSheet.create({
   },
   toneIndicatorOwn: {
     color: 'rgba(255, 255, 255, 0.7)',
+  },
+  aiInsightIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#FF9800',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  aiInsightIcon: {
+    fontSize: 14,
+    color: '#fff',
   },
 });
 

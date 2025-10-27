@@ -5,6 +5,7 @@ export interface Message {
   text: string;
   originalLanguage?: string; // BCP 47 language tag (e.g., 'en-US', 'es-MX')
   translations?: { [language: string]: string }; // Cached translations: { 'en-US': 'Hello', 'es-MX': 'Hola' }
+  aiInsights?: { [language: string]: string }; // AI analysis in each target language: { 'en-US': 'This idiom means...', 'es-MX': 'Este modismo significa...' }
   tone?: string; // Detected emotional tone (e.g., 'friendly', 'formal', 'excited', 'concerned')
   timestamp: number;
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
