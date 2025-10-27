@@ -3,6 +3,124 @@ import * as admin from 'firebase-admin';
 import { _analyzeAndTranslate } from './aiAnalysis';
 
 /**
+ * Internal function for auto-analyzing and translating messages
+ * Exported for testing purposes
+ */
+export async function _processMessageAnalysis(
+  messageData: any,
+  messageId: string,
+  updateRef: any
+): Promise<void> {
+  try {
+    // Check if message needs translation
+    const shouldTranslate =
+      messageData.text &&
+      messageData.originalLanguage &&
+      messageData.chatId &&
+      messageData.senderId &&
+      !messageData.translations; // Not already translated
+
+    if (!shouldTranslate) {
+      console.log(`⏭️  Skipping translation for message ${messageId} (already translated or missing fields)`);
+      return;
+    }
+
+    console.log(`🌐 Auto-translating message ${messageId}...`);
+
+    // Get chat data to determine recipient languages
+    const db = admin.firestore();
+    const chatDoc = await db.collection('chats').doc(messageData.chatId).get();
+
+    if (!chatDoc.exists) {
+      console.warn(`⚠️ Chat ${messageData.chatId} not found`);
+      return;
+    }
+
+    const chatData = chatDoc.data();
+    if (!chatData) return;
+
+    // Get participant languages
+    const participantIds = chatData.participants || [];
+    const participantLanguages: string[] = [];
+
+    // Fetch each participant's preferred language
+    const languagePromises = participantIds.map(async (uid: string) => {
+      if (uid === messageData.senderId) return null; // Skip sender
+
+      try {
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          return userData?.preferredLanguage;
+        }
+        return null;
+      } catch (error) {
+        console.warn(`⚠️ Failed to get language for user ${uid}:`, error);
+        return null;
+      }
+    });
+
+    const languages = await Promise.all(languagePromises);
+    languages.forEach((lang) => {
+      if (lang && !participantLanguages.includes(lang)) {
+        participantLanguages.push(lang);
+      }
+    });
+
+    if (participantLanguages.length === 0) {
+      console.log(`⏭️  No translation needed - all participants speak ${messageData.originalLanguage}`);
+      return;
+    }
+
+    // Get sender's nationality for cultural context
+    let senderNationality = 'Unknown';
+    try {
+      const senderDoc = await db.collection('users').doc(messageData.senderId).get();
+      if (senderDoc.exists) {
+        const senderData = senderDoc.data();
+        senderNationality = senderData?.nationality || 'Unknown';
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to get sender nationality:', error);
+    }
+
+    // Call internal analyzeAndTranslate function
+    const result = await _analyzeAndTranslate({
+      text: messageData.text,
+      sourceLang: messageData.originalLanguage,
+      targetLanguages: participantLanguages,
+      chatId: messageData.chatId,
+      senderId: messageData.senderId,
+      senderNationality,
+      participantIds,
+      requestingUserId: messageData.senderId, // Sender is making the request
+    });
+
+    // Update message with translations and AI insights
+    const updateData: any = {
+      translations: result.translations || {},
+      tone: result.tone || null,
+    };
+
+    // Only add aiInsights if they exist
+    if (result.aiInsights && Object.keys(result.aiInsights).length > 0) {
+      updateData.aiInsights = result.aiInsights;
+    }
+
+    await updateRef.update(updateData);
+
+    console.log(
+      `✅ Auto-translated message ${messageId} to ${participantLanguages.length} languages` +
+      (result.aiInsights ? ' with AI insights' : '')
+    );
+  } catch (error) {
+    console.error(`❌ Failed to auto-translate message ${messageId}:`, error);
+    // Don't throw - we don't want to fail the message send
+    // The message will stay without translation and can be retried
+  }
+}
+
+/**
  * Firestore Trigger: Auto-Analyze and Translate Messages
  *
  * Automatically analyzes and translates messages when they're created
@@ -20,114 +138,7 @@ export const autoAnalyzeAndTranslate = functions.firestore
   .onCreate(async (snapshot, context) => {
     const data = snapshot.data();
     const messageId = context.params.messageId;
-
-    try {
-      // Check if message needs translation
-      const shouldTranslate =
-        data.text &&
-        data.originalLanguage &&
-        data.chatId &&
-        data.senderId &&
-        !data.translations; // Not already translated
-
-      if (!shouldTranslate) {
-        console.log(`⏭️  Skipping translation for message ${messageId} (already translated or missing fields)`);
-        return;
-      }
-
-      console.log(`🌐 Auto-translating message ${messageId}...`);
-
-      // Get chat data to determine recipient languages
-      const db = admin.firestore();
-      const chatDoc = await db.collection('chats').doc(data.chatId).get();
-
-      if (!chatDoc.exists) {
-        console.warn(`⚠️ Chat ${data.chatId} not found`);
-        return;
-      }
-
-      const chatData = chatDoc.data();
-      if (!chatData) return;
-
-      // Get participant languages
-      const participantIds = chatData.participants || [];
-      const participantLanguages: string[] = [];
-
-      // Fetch each participant's preferred language
-      const languagePromises = participantIds.map(async (uid: string) => {
-        if (uid === data.senderId) return null; // Skip sender
-
-        try {
-          const userDoc = await db.collection('users').doc(uid).get();
-          if (userDoc.exists) {
-            const userData = userDoc.data();
-            return userData?.preferredLanguage;
-          }
-          return null;
-        } catch (error) {
-          console.warn(`⚠️ Failed to get language for user ${uid}:`, error);
-          return null;
-        }
-      });
-
-      const languages = await Promise.all(languagePromises);
-      languages.forEach((lang) => {
-        if (lang && !participantLanguages.includes(lang)) {
-          participantLanguages.push(lang);
-        }
-      });
-
-      if (participantLanguages.length === 0) {
-        console.log(`⏭️  No translation needed - all participants speak ${data.originalLanguage}`);
-        return;
-      }
-
-      // Get sender's nationality for cultural context
-      let senderNationality = 'Unknown';
-      try {
-        const senderDoc = await db.collection('users').doc(data.senderId).get();
-        if (senderDoc.exists) {
-          const senderData = senderDoc.data();
-          senderNationality = senderData?.nationality || 'Unknown';
-        }
-      } catch (error) {
-        console.warn('⚠️ Failed to get sender nationality:', error);
-      }
-
-      // Call internal analyzeAndTranslate function
-      const result = await _analyzeAndTranslate({
-        text: data.text,
-        sourceLang: data.originalLanguage,
-        targetLanguages: participantLanguages,
-        chatId: data.chatId,
-        senderId: data.senderId,
-        senderNationality,
-        participantIds,
-        requestingUserId: data.senderId, // Sender is making the request
-      });
-
-      // Update message with translations and AI insights
-      const updateData: any = {
-        translations: result.translations || {},
-        tone: result.tone || null,
-      };
-
-      // Only add aiInsights if they exist
-      if (result.aiInsights && Object.keys(result.aiInsights).length > 0) {
-        updateData.aiInsights = result.aiInsights;
-      }
-
-      await snapshot.ref.update(updateData);
-
-      console.log(
-        `✅ Auto-translated message ${messageId} to ${participantLanguages.length} languages` +
-        (result.aiInsights ? ' with AI insights' : '')
-      );
-    } catch (error) {
-      console.error(`❌ Failed to auto-translate message ${messageId}:`, error);
-      // Don't throw - we don't want to fail the message send
-      // The message will stay without translation and can be retried
-    }
+    await _processMessageAnalysis(data, messageId, snapshot.ref);
   });
 
 /**
