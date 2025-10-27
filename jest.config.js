@@ -20,6 +20,5 @@ module.exports = {
     '!**/functions/**',
   ],
   clearMocks: true,
-  resetMocks: true,
   restoreMocks: true,
 };
