@@ -17,7 +17,8 @@
       "Bash(firebase use:*)",
       "Bash(gcloud functions call:*)",
       "Bash(curl:*)",
-      "Bash(firebase functions:list:*)"
+      "Bash(firebase functions:list:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

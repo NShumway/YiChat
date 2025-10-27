@@ -151,7 +151,7 @@ export default function ChatsScreen() {
         ]} />
         <TouchableOpacity
           style={styles.settingsButton}
-          onPress={() => router.push('/settings' as any)}
+          onPress={() => router.push('/(tabs)/settings')}
         >
           <Text style={styles.settingsIcon}>⚙️</Text>
         </TouchableOpacity>

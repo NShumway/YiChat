@@ -32,7 +32,7 @@ export const initDatabase = () => {
   try {
     const database = getDatabase();
     if (!database) return false;
-    
+
     // Create tables one by one for better error handling
     database.execSync(`
       CREATE TABLE IF NOT EXISTS messages (
@@ -51,10 +51,45 @@ export const initDatabase = () => {
         embedded INTEGER DEFAULT 0
       );
     `);
-    
+
+    // Migrate existing tables: Add new columns if they don't exist
+    // This handles users upgrading from older versions
+    try {
+      // Check if translations column exists
+      const checkColumns = database.getAllSync<any>(
+        `PRAGMA table_info(messages);`
+      );
+      const columnNames = checkColumns.map((col: any) => col.name);
+
+      if (!columnNames.includes('originalLanguage')) {
+        console.log('📦 Migrating: Adding originalLanguage column');
+        database.execSync(`ALTER TABLE messages ADD COLUMN originalLanguage TEXT;`);
+      }
+
+      if (!columnNames.includes('translations')) {
+        console.log('📦 Migrating: Adding translations column');
+        database.execSync(`ALTER TABLE messages ADD COLUMN translations TEXT;`);
+      }
+
+      if (!columnNames.includes('tone')) {
+        console.log('📦 Migrating: Adding tone column');
+        database.execSync(`ALTER TABLE messages ADD COLUMN tone TEXT;`);
+      }
+
+      if (!columnNames.includes('embedded')) {
+        console.log('📦 Migrating: Adding embedded column');
+        database.execSync(`ALTER TABLE messages ADD COLUMN embedded INTEGER DEFAULT 0;`);
+      }
+
+      console.log('✅ Database migration completed');
+    } catch (migrationError) {
+      console.error('⚠️ Migration error (non-fatal):', migrationError);
+      // Continue even if migration fails - table might be new
+    }
+
     database.execSync(`CREATE INDEX IF NOT EXISTS idx_messages_chatId ON messages(chatId);`);
     database.execSync(`CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);`);
-    
+
     database.execSync(`
       CREATE TABLE IF NOT EXISTS chats (
         id TEXT PRIMARY KEY,
@@ -65,7 +100,7 @@ export const initDatabase = () => {
         unreadCount INTEGER DEFAULT 0
       );
     `);
-    
+
     database.execSync(`
       CREATE TABLE IF NOT EXISTS pending_messages (
         id TEXT PRIMARY KEY,
@@ -73,7 +108,7 @@ export const initDatabase = () => {
         timestamp INTEGER NOT NULL
       );
     `);
-    
+
     console.log('✅ Database initialized successfully');
     return true;
   } catch (error) {
