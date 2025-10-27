@@ -41,11 +41,14 @@ export const initDatabase = () => {
         senderId TEXT NOT NULL,
         text TEXT NOT NULL,
         originalLanguage TEXT,
+        translations TEXT,
+        tone TEXT,
         timestamp INTEGER NOT NULL,
         status TEXT DEFAULT 'sending',
         readBy TEXT DEFAULT '{}',
         mediaURL TEXT,
-        localOnly INTEGER DEFAULT 0
+        localOnly INTEGER DEFAULT 0,
+        embedded INTEGER DEFAULT 0
       );
     `);
     
@@ -96,18 +99,21 @@ export const dbOperations = {
     const database = getDatabase();
     if (!database) return;
     database.runSync(
-      'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         message.id,
         message.chatId,
         message.senderId,
         message.text,
         message.originalLanguage || null,
+        message.translations ? JSON.stringify(message.translations) : null,
+        message.tone || null,
         message.timestamp,
         message.status,
         JSON.stringify(message.readBy),
         message.mediaURL || null,
-        message.localOnly ? 1 : 0
+        message.localOnly ? 1 : 0,
+        message.embedded ? 1 : 0
       ]
     );
   },
@@ -132,11 +138,14 @@ export const dbOperations = {
       senderId: row.senderId,
       text: row.text,
       originalLanguage: row.originalLanguage || undefined,
+      translations: row.translations ? JSON.parse(row.translations) : undefined,
+      tone: row.tone || undefined,
       timestamp: row.timestamp,
       status: row.status,
       readBy: JSON.parse(row.readBy),
       mediaURL: row.mediaURL || undefined,
-      localOnly: row.localOnly === 1
+      localOnly: row.localOnly === 1,
+      embedded: row.embedded === 1
     }));
   },
 
@@ -177,18 +186,21 @@ export const dbOperations = {
       const message = messages[0];
       database.runSync('DELETE FROM messages WHERE id = ?', [oldId]);
       database.runSync(
-        'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           newId,
           message.chatId,
           message.senderId,
           message.text,
           message.originalLanguage,
+          message.translations,
+          message.tone,
           message.timestamp,
           message.status,
           message.readBy,
           message.mediaURL,
-          message.localOnly
+          message.localOnly,
+          message.embedded || 0
         ]
       );
     }
@@ -332,11 +344,14 @@ export const dbOperations = {
       senderId: row.senderId,
       text: row.text,
       originalLanguage: row.originalLanguage || undefined,
+      translations: row.translations ? JSON.parse(row.translations) : undefined,
+      tone: row.tone || undefined,
       timestamp: row.timestamp,
       status: row.status,
       readBy: JSON.parse(row.readBy),
       mediaURL: row.mediaURL || undefined,
-      localOnly: row.localOnly === 1
+      localOnly: row.localOnly === 1,
+      embedded: row.embedded === 1
     }));
   },
 

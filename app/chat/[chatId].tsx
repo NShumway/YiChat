@@ -380,7 +380,7 @@ export default function ChatScreen() {
   }, [chatId, user, messages]);
 
   const sendMessage = async () => {
-    if (!messageText.trim() || !user || !chatId || isSending) return;
+    if (!messageText.trim() || !user || !chatId || isSending || !chatData) return;
 
     const text = messageText.trim();
     setIsSending(true);
@@ -416,33 +416,82 @@ export default function ChatScreen() {
       // Reload from SQLite to trigger UI update
       const updatedMessages = dbOperations.getMessagesByChat(chatId);
       setMessages(updatedMessages);
-      
+
       // 3. Clear input immediately (responsive feel)
       setMessageText('');
-      
+
       // 4. Scroll to bottom
       setTimeout(() => {
         flashListRef.current?.scrollToEnd({ animated: true });
       }, 100);
 
-      // 5. Send to Firestore (async, don't block UI)
-      const docRef = await addDoc(collection(db, 'messages'), {
+      // 5. Prepare message with translation (if online)
+      let translationData: {
+        originalLanguage: string;
+        translations?: { [language: string]: string };
+        tone?: string;
+      } = {
+        originalLanguage: user.preferredLanguage,
+      };
+
+      if (connectionStatus === 'online') {
+        try {
+          const { prepareMessageWithTranslation } = await import('../../services/translation');
+          translationData = await prepareMessageWithTranslation(
+            text,
+            chatId,
+            user.uid,
+            user.preferredLanguage,
+            chatData.participants
+          );
+          console.log('✅ Translation prepared:', translationData);
+        } catch (translationError: any) {
+          console.warn('⚠️ Translation failed, sending without translation:', translationError.message);
+          // Continue without translation - don't block message sending
+        }
+      }
+
+      // 6. Send to Firestore (async, don't block UI)
+      const messageData: any = {
         chatId,
         senderId: user.uid,
         text,
-        originalLanguage: user.preferredLanguage,
+        originalLanguage: translationData.originalLanguage,
         timestamp: serverTimestamp(),
         status: 'sent',
         readBy: { [user.uid]: Date.now() },
-      });
+      };
+
+      // Add translation fields if present
+      if (translationData.translations && Object.keys(translationData.translations).length > 0) {
+        messageData.translations = translationData.translations;
+      }
+      if (translationData.tone) {
+        messageData.tone = translationData.tone;
+      }
+      // Mark as not embedded yet (batch job will do it later)
+      messageData.embedded = false;
+
+      const docRef = await addDoc(collection(db, 'messages'), messageData);
 
       console.log('✅ Message sent to Firestore:', docRef.id);
 
-      // 6. Update local message with real ID
-      // Don't update status yet - let Firestore listener handle it to avoid double-render
+      // 7. Update local message with real ID and translation data
       dbOperations.updateMessageId(tempId, docRef.id);
 
-      // 7. Update chat's last message and increment unread count for other participants
+      // Update the optimistic message with translation data
+      const finalMessage: Message = {
+        ...optimisticMessage,
+        id: docRef.id,
+        originalLanguage: translationData.originalLanguage,
+        translations: translationData.translations,
+        tone: translationData.tone,
+        embedded: false,
+        status: 'sent',
+      };
+      dbOperations.insertMessage(finalMessage);
+
+      // 8. Update chat's last message and increment unread count for other participants
       const { data: chatDocData, exists } = await safeGetDoc<any>(
         doc(db, 'chats', chatId)
       );
@@ -469,13 +518,13 @@ export default function ChatScreen() {
       // Firestore listener will sync and update UI (avoids double-render)
     } catch (error) {
       console.error('❌ Error sending message:', error);
-      
+
       // Update message status to failed
       dbOperations.updateMessageStatus(tempId, 'failed');
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' as const } : m))
       );
-      
+
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setIsSending(false);

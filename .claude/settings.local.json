@@ -4,7 +4,20 @@
       "Bash(npm install:*)",
       "WebSearch",
       "WebFetch(domain:docs.expo.dev)",
-      "Bash(npx expo:*)"
+      "Bash(npx expo:*)",
+      "Bash(grep:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(npm init:*)",
+      "Bash(npm run build:*)",
+      "Bash(firebase deploy:*)",
+      "Bash(firebase functions:delete:*)",
+      "Bash(node lib/migrate.js:*)",
+      "Bash(firebase functions:config:get:*)",
+      "Bash(firebase use:*)",
+      "Bash(gcloud functions call:*)",
+      "Bash(curl:*)",
+      "Bash(firebase functions:list:*)"
     ],
     "deny": [],
     "ask": []

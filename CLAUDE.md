@@ -531,4 +531,233 @@ services/              # Core business logic
 store/                 # Zustand state management
 types/                 # TypeScript type definitions
 hooks/                 # Custom React hooks
+functions/             # Cloud Functions
+  src/
+    embeddings.ts      # Pinecone RAG service
+    translation.ts     # Language detection & translation
+    batchEmbedding.ts  # Scheduled embedding job
+    rateLimiting.ts    # Rate limit middleware
 ```
+
+## Real-Time Translation Architecture
+
+### Overview
+
+The app supports real-time translation with tone awareness using a three-tier architecture:
+
+1. **Language Detection** - Auto-detects message language with user context
+2. **Translation Caching** - Stores translations in message document (no separate cache needed)
+3. **RAG-Based Tone Detection** - Uses Pinecone to understand sender's communication style
+
+### Translation Flow
+
+**When a message is sent:**
+
+1. **Detect Language** (`detectLanguage`)
+   - Auto-detects using OpenAI GPT-4-turbo
+   - User's preferred language provided as context for ambiguous cases
+   - Returns BCP 47 language tag (e.g., 'en-US', 'es-MX', 'zh-CN')
+
+2. **Check if Translation Needed**
+   - Get all recipient languages from chat participants
+   - Compare base languages (en-US and en-GB are considered same)
+   - Skip translation if all users speak same base language
+
+3. **Batch Translate** (`batchTranslate`)
+   - Translates to all recipient languages in single API call
+   - Queries Pinecone for sender's recent messages (RAG context)
+   - Uses up to 3000 tokens of context to understand tone
+   - Returns: `{ translations: { 'en-US': '...', 'es-MX': '...' }, tone: 'friendly' }`
+
+4. **Store Message**
+   - Message document contains original text + all translations
+   - Example:
+     ```javascript
+     {
+       text: "Hello!",
+       originalLanguage: "en-US",
+       translations: {
+         "es-MX": "¡Hola!",
+         "zh-CN": "你好！",
+         "fr-FR": "Bonjour!"
+       },
+       tone: "friendly"
+     }
+     ```
+
+5. **Embed to Pinecone** (Async)
+   - Scheduled job runs every 5 minutes
+   - Only embeds messages that were translated
+   - Only embeds messages from last 30 days
+   - Optimized for Pinecone free tier (2GB storage, 2M writes/month)
+
+### Message Display
+
+**On recipient device:**
+
+1. Read message from SQLite/Firestore
+2. Check if `translations[userLanguage]` exists
+3. Display translation by default
+4. Show indicator: "Auto-translated (Spanish). See original?"
+5. User can toggle to see original text (local UI state only)
+6. On app restart, show translation again
+
+### Pinecone Integration
+
+**Purpose**: Store message embeddings for RAG-based tone detection
+
+**Index Configuration**:
+- Name: `yichat-messages`
+- Dimensions: 1024 (reduced from default 1536 for storage efficiency)
+- Metric: cosine similarity
+- Model: OpenAI text-embedding-3-small with custom dimensions
+
+**What Gets Embedded**:
+- Only messages that were translated (not same-language messages)
+- Only messages from last 30 days
+- Max 500 messages per batch job run (every 5 minutes)
+
+**RAG Query Pattern**:
+```typescript
+// Get context for translation
+const context = await getContextForTranslation(
+  chatId,        // Filter to this conversation
+  senderId,      // Only messages from this sender
+  messageText,   // Query text
+  3000           // Max tokens (adaptive message selection)
+);
+
+// Context example:
+// [2025-01-15T10:30:00Z] Hey! How's it going?
+// [2025-01-15T10:35:00Z] That's awesome!!! 🎉
+// [2025-01-15T10:40:00Z] Sounds good to me
+```
+
+**Free Tier Limits**:
+- Storage: 2 GB (~200k messages)
+- Writes: 2 million/month (~66k/day)
+- Reads: 1 million/month (~33k/day)
+
+**Monitoring**:
+```typescript
+// Call from admin panel
+const stats = await getEmbeddingStats();
+// Returns:
+// {
+//   total: { embeddedMessages: 50000, estimatedStorageGB: 0.4 },
+//   usage: { storagePercent: "20%", writesPercent: "2.5%" }
+// }
+```
+
+### Cloud Functions
+
+**Translation Functions** (`functions/src/translation.ts`):
+- `detectLanguage(text, userLanguage)` - Auto-detect with context
+- `translateWithTone(text, sourceLang, targetLang, chatId, senderId)` - Single translation with RAG
+- `batchTranslate(text, sourceLang, targetLanguages[], chatId, senderId)` - Multi-language translation
+
+**Embedding Functions** (`functions/src/embeddings.ts`):
+- `generateEmbedding(text)` - Create embedding using OpenAI
+- `embedMessage(...)` - Store single message in Pinecone
+- `querySimilarMessages(chatId, senderId, queryText, topK)` - RAG query
+- `getContextForTranslation(chatId, senderId, queryText, maxTokens)` - Adaptive context
+
+**Batch Jobs** (`functions/src/batchEmbedding.ts`):
+- `scheduledBatchEmbedMessages` - Runs every 5 minutes, embeds up to 500 messages
+- `getEmbeddingStats` - Monitor Pinecone usage
+- `cleanupOldEmbeddings` - Remove old embeddings to manage storage
+
+### Translation Caching Strategy
+
+**Key Insight**: No separate cache collection needed!
+
+Translations are stored directly in the message document:
+- ✅ Instant access (no extra Firestore read)
+- ✅ Syncs with message (SQLite + Firestore)
+- ✅ Works offline (cached in SQLite)
+- ✅ No cache invalidation logic needed
+
+**Example Message Document**:
+```javascript
+{
+  id: "msg123",
+  chatId: "chat456",
+  senderId: "user789",
+  text: "Hello, how are you?",
+  originalLanguage: "en-US",
+  translations: {
+    "es-MX": "Hola, ¿cómo estás?",
+    "zh-CN": "你好，你好吗？",
+    "fr-FR": "Bonjour, comment allez-vous?"
+  },
+  tone: "friendly",
+  timestamp: 1705334400000,
+  embedded: true
+}
+```
+
+### Performance Optimization
+
+**Same-Language Optimization**:
+- Check if all recipients speak same base language
+- Skip translation if so (saves 80% of API calls)
+- Example: User sends English to 10 English-speaking users → No translation
+
+**Batch Translation**:
+- One API call for all languages (not per-recipient)
+- Group chat with 5 languages: 1 API call vs 5
+- Reduces latency and cost
+
+**Adaptive RAG Context**:
+- Start with 50 most recent messages
+- Estimate tokens: ~4 chars per token (English), ~2 for CJK
+- If < 2000 tokens, expand to 100 messages
+- If > 4000 tokens, reduce to 25 messages
+- Target: 3000 tokens max
+
+**Embedding Batching**:
+- OpenAI supports up to 2048 inputs per embedding call
+- Batch up to 500 messages per scheduled run
+- Reduces API calls by 500x
+
+### Cost Estimation
+
+**OpenAI Costs** (GPT-4-turbo + text-embedding-3-small):
+- Language detection: ~$0.0001 per message
+- Translation (no RAG): ~$0.002 per message
+- Translation (with RAG): ~$0.010 per message
+- Embedding: ~$0.00002 per message
+
+**Monthly Cost Example** (1000 users, 50 messages/day each):
+- 50k messages/day = 1.5M messages/month
+- Assume 20% need translation: 300k translations/month
+- Cost: 300k × $0.010 = **$3,000/month**
+
+**Cost Reduction Strategies**:
+1. Skip same-language messages (saves 80%)
+2. Cache translations in message (no re-translation)
+3. Rate limit to 30 translations/minute per user
+4. Use batch translate for groups
+
+### Rate Limiting
+
+**Limits** (per user, per feature):
+- Translation: 30/minute, 200/hour, 1000/day
+- AI Conversation: 10/minute, 50/hour, 200/day
+- Other AI features: Similar limits
+
+**Implementation**:
+- Firestore-based sliding window counters
+- Three time windows: minute, hour, day
+- Atomic increments with `FieldValue.increment()`
+- User-friendly error messages with reset time
+
+### Setup Instructions
+
+See `TRANSLATION_IMPLEMENTATION.md` for:
+- Pinecone account setup
+- Index creation
+- API key configuration
+- Cloud Functions deployment
+- Client-side implementation guide
+- Testing checklist

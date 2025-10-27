@@ -3,12 +3,15 @@ export interface Message {
   chatId: string;
   senderId: string;
   text: string;
-  originalLanguage?: string;
+  originalLanguage?: string; // BCP 47 language tag (e.g., 'en-US', 'es-MX')
+  translations?: { [language: string]: string }; // Cached translations: { 'en-US': 'Hello', 'es-MX': 'Hola' }
+  tone?: string; // Detected emotional tone (e.g., 'friendly', 'formal', 'excited', 'concerned')
   timestamp: number;
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   readBy: { [userId: string]: number };
   mediaURL?: string;
   localOnly?: boolean;
+  embedded?: boolean; // Whether message has been embedded to Pinecone
   type?: 'message' | 'system'; // System messages for group events
   senderName?: string; // Cached sender name for groups
 }

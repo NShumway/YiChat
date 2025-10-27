@@ -1,10 +1,21 @@
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { rateLimitMiddleware, incrementRateLimit } from './rateLimiting';
 
 // Initialize Firebase Admin
 admin.initializeApp();
+
+// Export new translation and embedding functions
+export { detectLanguage, translateWithTone, batchTranslate } from './translation';
+export {
+  // scheduledBatchEmbedMessages, // NOTE: v1 scheduled functions have CPU config issues
+  getEmbeddingStats,
+  cleanupOldEmbeddings,
+} from './batchEmbedding';
+
+// Export async message embedding (Firestore trigger)
+export { autoEmbedMessage, retryFailedEmbeddings } from './messageEmbedding';
 
 // Initialize OpenAI client
 // API key will be set via: firebase functions:config:set openai.key="sk-..."

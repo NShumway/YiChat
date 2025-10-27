@@ -7,6 +7,14 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Chats',
+          tabBarIcon: () => '💬',
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: () => '⚙️',
         }}
       />
     </Tabs>

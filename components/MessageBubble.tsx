@@ -1,11 +1,12 @@
 import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { memo, useEffect, useState } from 'react';
-import { doc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Message } from '../types/Message';
 import { safeGetDoc } from '../services/firestoreHelpers';
 import { useStore } from '../store/useStore';
 import { ReadReceiptsModal } from './ReadReceiptsModal';
+import { getLanguageName } from '../services/translation';
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,7 +20,9 @@ export const MessageBubble = memo(
     const [senderName, setSenderName] = useState<string>('');
     const [showReceiptsModal, setShowReceiptsModal] = useState(false);
     const [readByNames, setReadByNames] = useState<string[]>([]);
+    const [showOriginal, setShowOriginal] = useState(false);
     const connectionStatus = useStore((state) => state.connectionStatus);
+    const user = useStore((state) => state.user);
 
     // Fetch sender name for group chats
     useEffect(() => {
@@ -149,6 +152,14 @@ export const MessageBubble = memo(
 
     const groupReadReceiptText = isGroupChat && isOwn ? getGroupReadReceiptText() : null;
 
+    // Determine which text to display (original or translated)
+    const userLanguage = user?.preferredLanguage || 'en-US';
+    const hasTranslation = message.translations && message.translations[userLanguage];
+    const isTranslated = hasTranslation && message.originalLanguage !== userLanguage;
+    const displayText = showOriginal || !hasTranslation
+      ? message.text
+      : message.translations[userLanguage];
+
     return (
       <>
         <View style={[styles.container, isOwn ? styles.ownContainer : styles.otherContainer]}>
@@ -157,8 +168,31 @@ export const MessageBubble = memo(
               <Text style={styles.senderName}>{senderName}</Text>
             )}
             <Text style={[styles.text, isOwn ? styles.ownText : styles.otherText]}>
-              {message.text}
+              {displayText}
             </Text>
+
+            {/* Translation indicator and toggle */}
+            {isTranslated && (
+              <TouchableOpacity
+                onPress={() => setShowOriginal(!showOriginal)}
+                style={styles.translationIndicator}
+              >
+                <Text style={[styles.indicatorText, isOwn && styles.indicatorTextOwn]}>
+                  {showOriginal
+                    ? `Show ${getLanguageName(userLanguage)} translation`
+                    : `Auto-translated (${getLanguageName(message.originalLanguage || 'Unknown')}). See original?`
+                  }
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Tone indicator (optional) */}
+            {message.tone && !isOwn && (
+              <Text style={[styles.toneIndicator, isOwn && styles.toneIndicatorOwn]}>
+                Tone: {message.tone}
+              </Text>
+            )}
+
             <View style={styles.footer}>
               <Text style={[styles.time, isOwn ? styles.ownTime : styles.otherTime]}>
                 {formatTime(message.timestamp)}
@@ -294,6 +328,32 @@ const styles = StyleSheet.create({
     marginTop: -2,
     marginBottom: 4,
     paddingRight: 16,
+  },
+  translationIndicator: {
+    marginTop: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  indicatorText: {
+    fontSize: 11,
+    color: '#007AFF',
+    fontStyle: 'italic',
+  },
+  indicatorTextOwn: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  toneIndicator: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  toneIndicatorOwn: {
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 });
 

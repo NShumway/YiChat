@@ -235,7 +235,7 @@ const sendBatchToFirestore = async (messages: Message[]) => {
   // Add all messages to batch
   for (const message of messages) {
     const messageRef = doc(collection(db, 'messages'));
-    batch.set(messageRef, {
+    const messageData: any = {
       chatId: message.chatId,
       senderId: message.senderId,
       text: message.text,
@@ -243,8 +243,20 @@ const sendBatchToFirestore = async (messages: Message[]) => {
       timestamp: serverTimestamp(),
       status: 'sent',
       readBy: message.readBy,
-    });
+    };
 
+    // Include translation fields if present
+    if (message.translations) {
+      messageData.translations = message.translations;
+    }
+    if (message.tone) {
+      messageData.tone = message.tone;
+    }
+    if (message.embedded !== undefined) {
+      messageData.embedded = message.embedded;
+    }
+
+    batch.set(messageRef, messageData);
     messageRefs.push({ oldId: message.id, newRef: messageRef });
   }
 
@@ -282,7 +294,7 @@ const sendBatchToFirestore = async (messages: Message[]) => {
  * Updates local SQLite with real ID and status
  */
 const sendMessageToFirestore = async (message: Message) => {
-  const docRef = await addDoc(collection(db, 'messages'), {
+  const messageData: any = {
     chatId: message.chatId,
     senderId: message.senderId,
     text: message.text,
@@ -290,7 +302,20 @@ const sendMessageToFirestore = async (message: Message) => {
     timestamp: serverTimestamp(),
     status: 'sent',
     readBy: message.readBy,
-  });
+  };
+
+  // Include translation fields if present
+  if (message.translations) {
+    messageData.translations = message.translations;
+  }
+  if (message.tone) {
+    messageData.tone = message.tone;
+  }
+  if (message.embedded !== undefined) {
+    messageData.embedded = message.embedded;
+  }
+
+  const docRef = await addDoc(collection(db, 'messages'), messageData);
 
   console.log(`📤 Message sent to Firestore: ${docRef.id}`);
 
