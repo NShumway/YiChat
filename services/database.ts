@@ -372,6 +372,35 @@ export const dbOperations = {
     database.runSync('DELETE FROM pending_messages WHERE id = ?', [messageId]);
   },
 
+  // Get last message for a chat with translation support
+  getLastMessageForChat: (chatId: string, userLanguage: string): string => {
+    const messages = dbOperations.getMessagesByChat(chatId);
+    if (messages.length === 0) return 'No messages yet';
+
+    const lastMessage = messages[messages.length - 1]; // Already sorted by timestamp ASC
+
+    console.log('📨 getLastMessageForChat:', {
+      chatId,
+      totalMessages: messages.length,
+      lastMessageId: lastMessage.id,
+      lastMessageText: lastMessage.text.substring(0, 50),
+      lastMessageTimestamp: new Date(lastMessage.timestamp).toISOString(),
+      hasTranslation: !!lastMessage.translations?.[userLanguage],
+      allTimestamps: messages.slice(-3).map(m => ({
+        id: m.id,
+        text: m.text.substring(0, 30),
+        timestamp: new Date(m.timestamp).toISOString(),
+      })),
+    });
+
+    // Use translation if available, fallback to original
+    if (lastMessage.translations && lastMessage.translations[userLanguage]) {
+      return lastMessage.translations[userLanguage];
+    }
+
+    return lastMessage.text;
+  },
+
   getFailedMessages: (): Message[] => {
     if (isWebPlatform) {
       return webStorage.messages.filter(m => m.status === 'failed');

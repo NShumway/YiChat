@@ -115,17 +115,13 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
       animationType="slide"
       onRequestClose={onClose}
     >
-      <TouchableOpacity
-        style={styles.backdrop}
-        activeOpacity={1}
-        onPress={onClose}
-      >
-        <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-          <TouchableOpacity
-            style={styles.modalContainer}
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-          >
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={onClose}
+        >
+          <View style={styles.modalContainer}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Read Receipts</Text>
@@ -187,27 +183,31 @@ export const ReadReceiptsModal = ({ visible, onClose, readBy, participants, send
               )}
             </ScrollView>
           )}
-          </TouchableOpacity>
-        </SafeAreaView>
-      </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
-  },
-  safeArea: {
-    maxHeight: '75%',
+    paddingTop: 60, // Add padding to avoid status bar
   },
   modalContainer: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    flex: 1,
+    maxHeight: '85%', // Use most of the screen
+    minHeight: 400,
+    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',

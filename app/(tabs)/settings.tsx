@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
 import { LanguagePicker } from '../../components/LanguagePicker';
+import { NationalityPicker } from '../../components/NationalityPicker';
 import { auth } from '../../services/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'expo-router';
@@ -85,6 +86,14 @@ export default function SettingsScreen() {
               <Text style={styles.label}>Email</Text>
               <Text style={styles.value}>{user?.email || 'Unknown'}</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Personal Information Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Personal Information</Text>
+          <View style={styles.card}>
+            <NationalityPicker />
           </View>
         </View>
 

@@ -6,16 +6,19 @@ import { db } from '../services/firebase';
 import { Chat } from '../types/Message';
 import { useStore } from '../store/useStore';
 import { safeGetDoc } from '../services/firestoreHelpers';
+import { dbOperations } from '../services/database';
 
 interface ChatListItemProps {
   chat: Chat;
+  refreshTrigger?: number;
 }
 
-export function ChatListItem({ chat }: ChatListItemProps) {
+export function ChatListItem({ chat, refreshTrigger }: ChatListItemProps) {
   const router = useRouter();
   const currentUser = useStore((state) => state.user);
   const connectionStatus = useStore((state) => state.connectionStatus);
   const [otherUserName, setOtherUserName] = useState<string>('Loading...');
+  const [lastMessageText, setLastMessageText] = useState<string>('');
 
   // Fetch chat name (group name or other user's name)
   useEffect(() => {
@@ -55,6 +58,23 @@ export function ChatListItem({ chat }: ChatListItemProps) {
 
     fetchChatName();
   }, [chat.type, chat.name, chat.participants, currentUser?.uid, connectionStatus]);
+
+  // Fetch last message with translation support from SQLite
+  // Re-read whenever: chat changes, language changes, OR refreshTrigger increments (new messages)
+  useEffect(() => {
+    const userLanguage = currentUser?.preferredLanguage || 'en-US';
+    const translatedMessage = dbOperations.getLastMessageForChat(chat.id, userLanguage);
+
+    console.log('🔄 Updating chat preview:', {
+      chatId: chat.id,
+      lastMessageFromFirestore: chat.lastMessage,
+      lastMessageFromSQLite: translatedMessage,
+      timestamp: chat.lastMessageTimestamp,
+      refreshTrigger,
+    });
+
+    setLastMessageText(translatedMessage);
+  }, [chat, currentUser?.preferredLanguage, refreshTrigger]);
 
   const formatTimestamp = (timestamp?: number) => {
     if (!timestamp) return '';
@@ -107,11 +127,11 @@ export function ChatListItem({ chat }: ChatListItemProps) {
         </View>
 
         <View style={styles.messageRow}>
-          <Text 
+          <Text
             style={[styles.lastMessage, hasUnread && styles.lastMessageUnread]}
             numberOfLines={1}
           >
-            {chat.lastMessage || 'No messages yet'}
+            {lastMessageText}
           </Text>
           {hasUnread && (
             <View style={styles.unreadBadge}>

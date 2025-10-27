@@ -24,7 +24,13 @@ export function useMessageNotifications() {
   const segments = useSegments();
   const notifiedMessageIds = useRef<Set<string>>(new Set());
   const userChatIds = useRef<Set<string>>(new Set());
-  const pendingNotifications = useRef<Map<string, { count: number; timeout: NodeJS.Timeout }>>(new Map());
+  const pendingNotifications = useRef<Map<string, {
+    count: number;
+    timeout: NodeJS.Timeout;
+    latestMessageData: any;
+    latestSenderName: string;
+    chatData: any;
+  }>>(new Map());
 
   useEffect(() => {
     // Skip on web - notifications not supported
@@ -81,8 +87,16 @@ export function useMessageNotifications() {
           const messageData = change.doc.data();
           const messageId = change.doc.id;
 
+          console.log('🔔 Processing new message:', {
+            messageId,
+            text: messageData.text?.substring(0, 50),
+            timestamp: messageData.timestamp,
+            chatId: messageData.chatId,
+          });
+
           // Skip if not in user's chats
           if (!userChatIds.current.has(messageData.chatId)) {
+            console.log('⏭️ Skipping - not in user chats');
             continue;
           }
 
@@ -131,19 +145,32 @@ export function useMessageNotifications() {
             // Already have a pending notification for this chat
             clearTimeout(pending.timeout);
             pending.count++;
+            // Update to latest message data
+            pending.latestMessageData = messageData;
+            pending.latestSenderName = senderName;
+            pending.chatData = chatData;
 
             // Show grouped notification after short delay
             const timeout = setTimeout(async () => {
               const count = pending.count;
+              const latestData = pending.latestMessageData;
+              const latestSender = pending.latestSenderName;
+              const chat = pending.chatData;
               pendingNotifications.current.delete(chatId);
 
-              const title = chatData.type === 'group'
-                ? `${count} new messages in ${chatData.name || 'Group Chat'}`
-                : `${count} new messages from ${senderName}`;
+              const title = chat.type === 'group'
+                ? `${count} new messages in ${chat.name || 'Group Chat'}`
+                : `${count} new messages from ${latestSender}`;
+
+              // Use translation if available, fallback to original text
+              const userLanguage = user?.preferredLanguage || 'en-US';
+              const displayText = (latestData.translations && latestData.translations[userLanguage])
+                ? latestData.translations[userLanguage]
+                : latestData.text;
 
               await showLocalNotification(
                 title,
-                messageData.text, // Show latest message
+                displayText, // Show LATEST translated message
                 { chatId }
               );
             }, 2000); // Wait 2s to group more messages
@@ -155,15 +182,39 @@ export function useMessageNotifications() {
               pendingNotifications.current.delete(chatId);
             }, 2000);
 
-            pendingNotifications.current.set(chatId, { count: 1, timeout });
+            pendingNotifications.current.set(chatId, {
+              count: 1,
+              timeout,
+              latestMessageData: messageData,
+              latestSenderName: senderName,
+              chatData: chatData,
+            });
 
             const title = chatData.type === 'group'
               ? `${senderName} in ${chatData.name || 'Group Chat'}`
               : senderName;
 
+            // Use translation if available, fallback to original text
+            const userLanguage = user?.preferredLanguage || 'en-US';
+
+            console.log('🔔 Preparing notification for single message:', {
+              messageId,
+              originalText: messageData.text,
+              hasTranslations: !!messageData.translations,
+              translationKeys: messageData.translations ? Object.keys(messageData.translations) : [],
+              userLanguage,
+              translationForUser: messageData.translations?.[userLanguage],
+            });
+
+            const displayText = (messageData.translations && messageData.translations[userLanguage])
+              ? messageData.translations[userLanguage]
+              : messageData.text;
+
+            console.log('🔔 Final display text for notification:', displayText);
+
             await showLocalNotification(
               title,
-              messageData.text,
+              displayText,
               { chatId }
             );
           }

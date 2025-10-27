@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useStore } from '../../store/useStore';
 import { Chat } from '../../types/Message';
@@ -15,6 +15,35 @@ export default function ChatsScreen() {
   const { user, connectionStatus } = useStore();
   const [chats, setChats] = useState<Chat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Listen for new messages in all user's chats to trigger preview updates
+  useEffect(() => {
+    if (!user) return;
+
+    console.log('🔥 Setting up message listener for preview updates');
+
+    const q = query(
+      collection(db, 'messages'),
+      orderBy('timestamp', 'desc'),
+      limit(50) // Only watch recent messages
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      // Only trigger refresh if there are new messages
+      const hasNewMessages = snapshot.docChanges().some(change => change.type === 'added');
+      if (hasNewMessages) {
+        console.log('📨 New message detected, refreshing chat previews');
+        // Trigger re-render of all ChatListItems
+        setRefreshTrigger(prev => prev + 1);
+      }
+    });
+
+    return () => {
+      console.log('🔥 Cleaning up message listener');
+      unsubscribe();
+    };
+  }, [user]);
 
   // Real-time listener for user's chats
   useEffect(() => {
@@ -142,7 +171,7 @@ export default function ChatsScreen() {
             <FlatList
               data={chats}
               keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <ChatListItem chat={item} />}
+              renderItem={({ item }) => <ChatListItem chat={item} refreshTrigger={refreshTrigger} />}
               style={styles.chatList}
               contentContainerStyle={styles.chatListContent}
             />

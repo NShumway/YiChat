@@ -141,18 +141,35 @@ export const MessageBubble = memo(
       const readByUserIds = Object.keys(message.readBy || {})
         .filter(uid => uid !== message.senderId);
 
+      console.log('📊 Group read receipt calculation:', {
+        messageId: message.id,
+        readByUserIds,
+        chatParticipants,
+        totalReadBy: readByUserIds.length,
+      });
+
       // No one has read it yet - show nothing
-      if (readByUserIds.length === 0) return null;
+      if (readByUserIds.length === 0) {
+        console.log('❌ No reads yet');
+        return null;
+      }
 
       // Calculate total participants excluding sender
       const totalParticipants = (chatParticipants || []).filter(uid => uid !== message.senderId).length;
 
+      console.log('✅ Participants calculation:', {
+        totalParticipants,
+        readByUserIdsLength: readByUserIds.length,
+      });
+
       // All participants have read it
       if (readByUserIds.length === totalParticipants) {
+        console.log('✅ All read');
         return 'Read by all';
       }
 
       // Some but not all have read it
+      console.log('✅ Some read');
       return 'Read by some';
     };
 
@@ -166,6 +183,13 @@ export const MessageBubble = memo(
     }
 
     const groupReadReceiptText = isGroupChat && isOwn ? getGroupReadReceiptText() : null;
+
+    console.log('💬 MessageBubble rendering group read receipt:', {
+      messageId: message.id,
+      isGroupChat,
+      isOwn,
+      groupReadReceiptText,
+    });
 
     // Determine which text to display (original or translated)
     const userLanguage = user?.preferredLanguage || 'en-US';
@@ -294,17 +318,24 @@ export const MessageBubble = memo(
       </>
     );
   },
-  // Only re-render if message ID, text, status, or readBy changes
+  // Only re-render if message ID, text, status, readBy, or chatParticipants changes
   (prevProps, nextProps) => {
-    const prevReadByCount = Object.keys(prevProps.message.readBy || {}).length;
-    const nextReadByCount = Object.keys(nextProps.message.readBy || {}).length;
-    
+    // Deep comparison of readBy object to detect actual changes
+    const prevReadBy = JSON.stringify(prevProps.message.readBy || {});
+    const nextReadBy = JSON.stringify(nextProps.message.readBy || {});
+
+    // Deep comparison of chatParticipants for group chat read receipt calculations
+    const prevParticipants = JSON.stringify(prevProps.chatParticipants || []);
+    const nextParticipants = JSON.stringify(nextProps.chatParticipants || []);
+
     return (
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.text === nextProps.message.text &&
       prevProps.message.status === nextProps.message.status &&
       prevProps.isOwn === nextProps.isOwn &&
-      prevReadByCount === nextReadByCount // Re-render if readBy count changes
+      prevProps.isGroupChat === nextProps.isGroupChat &&
+      prevReadBy === nextReadBy && // Deep comparison of readBy
+      prevParticipants === nextParticipants // Deep comparison of chatParticipants
     );
   }
 );

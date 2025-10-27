@@ -262,6 +262,18 @@ export default function ChatScreen() {
     };
   }, [chatId]);
 
+  // Auto-scroll to bottom when chat is first opened
+  useEffect(() => {
+    if (messages.length > 0 && flashListRef.current) {
+      // Small delay to ensure FlashList has rendered
+      const timer = setTimeout(() => {
+        flashListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [chatId]); // Only trigger when opening a new chat
+
   // Handler for opening AI chat
   const handleAIChat = useCallback((message: Message) => {
     setSelectedMessage(message);
@@ -492,95 +504,74 @@ export default function ChatScreen() {
         flashListRef.current?.scrollToEnd({ animated: true });
       }, 100);
 
-      // 5. Prepare message with translation (if online)
-      let translationData: {
-        originalLanguage: string;
-        translations?: { [language: string]: string };
-        tone?: string;
-      } = {
-        originalLanguage: user.preferredLanguage,
-      };
-
-      if (connectionStatus === 'online' && auth.currentUser) {
-        try {
-          console.log('🌐 Preparing translation for:', {
-            text: text.substring(0, 50),
-            chatId,
-            senderId: user.uid,
-            userLanguage: user.preferredLanguage,
-            participants: chatData.participants,
-          });
-          const { prepareMessageWithTranslation } = await import('../../services/translation');
-          translationData = await prepareMessageWithTranslation(
-            text,
-            chatId,
-            user.uid,
-            user.preferredLanguage,
-            chatData.participants
-          );
-          console.log('✅ Translation prepared:', JSON.stringify(translationData, null, 2));
-        } catch (translationError: any) {
-          console.warn('⚠️ Translation failed, sending without translation:', translationError.message);
-          console.error('Translation error details:', translationError);
-          // Continue without translation - don't block message sending
-        }
-      } else {
-        console.log('⚠️ Skipping translation:', {
-          connectionStatus,
-          hasAuthUser: !!auth.currentUser,
-        });
-      }
-
-      // 6. Send to Firestore (async, don't block UI)
+      // 5. Send to Firestore immediately WITHOUT waiting for translation
       const messageData: any = {
         chatId,
         senderId: user.uid,
+        senderName: user.displayName, // Cache sender name for group chats
         text,
-        originalLanguage: translationData.originalLanguage,
+        originalLanguage: user.preferredLanguage,
         timestamp: serverTimestamp(),
         status: 'sent',
         readBy: { [user.uid]: Date.now() },
+        embedded: false,
       };
 
-      // Add translation fields if present
-      if (translationData.translations && Object.keys(translationData.translations).length > 0) {
-        messageData.translations = translationData.translations;
-        console.log('✅ Added translations to messageData:', Object.keys(translationData.translations));
-      } else {
-        console.log('⚠️ No translations to add');
-      }
-      if (translationData.tone) {
-        messageData.tone = translationData.tone;
-        console.log('✅ Added tone to messageData:', translationData.tone);
-      }
-      // Mark as not embedded yet (batch job will do it later)
-      messageData.embedded = false;
-
-      console.log('📤 Sending to Firestore:', {
-        hasTranslations: !!messageData.translations,
-        translationKeys: messageData.translations ? Object.keys(messageData.translations) : [],
-        originalLanguage: messageData.originalLanguage,
-        hasTone: !!messageData.tone,
-      });
+      console.log('📤 Sending message to Firestore immediately (translation will follow)');
 
       const docRef = await addDoc(collection(db, 'messages'), messageData);
 
       console.log('✅ Message sent to Firestore:', docRef.id);
 
-      // 7. Update local message with real ID and translation data
+      // 6. Update local message with real ID
       dbOperations.updateMessageId(tempId, docRef.id);
 
-      // Update the optimistic message with translation data
-      const finalMessage: Message = {
+      // Update optimistic message to reflect it's been sent
+      const sentMessage: Message = {
         ...optimisticMessage,
         id: docRef.id,
-        originalLanguage: translationData.originalLanguage,
-        translations: translationData.translations,
-        tone: translationData.tone,
-        embedded: false,
         status: 'sent',
+        localOnly: false,
       };
-      dbOperations.insertMessage(finalMessage);
+      dbOperations.insertMessage(sentMessage);
+
+      // 7. Request translation asynchronously (don't wait for it)
+      if (connectionStatus === 'online' && auth.currentUser) {
+        console.log('🌐 Starting async translation...');
+
+        // Fire and forget - translation will update via Firestore listener
+        (async () => {
+          try {
+            const { prepareMessageWithTranslation } = await import('../../services/translation');
+            const translationData = await prepareMessageWithTranslation(
+              text,
+              chatId,
+              user.uid,
+              user.preferredLanguage,
+              chatData.participants
+            );
+
+            console.log('✅ Translation completed:', {
+              hasTranslations: !!translationData.translations,
+              translationKeys: translationData.translations ? Object.keys(translationData.translations) : [],
+            });
+
+            // Update Firestore with translation data
+            await updateDoc(doc(db, 'messages', docRef.id), {
+              translations: translationData.translations || {},
+              tone: translationData.tone || null,
+            });
+
+            console.log('✅ Translation saved to Firestore');
+            // Firestore listener will update local SQLite automatically
+          } catch (translationError: any) {
+            console.warn('⚠️ Translation failed (message already sent):', translationError.message);
+            // Message is already sent, translation failure is non-critical
+          }
+        })();
+      } else {
+        console.log('⏭️ Skipping translation (offline or no auth)');
+      }
 
       // 8. Update chat's last message and increment unread count for other participants
       const { data: chatDocData, exists } = await safeGetDoc<any>(
