@@ -37,7 +37,8 @@ export const auth = Platform.OS === 'web'
 // IMPORTANT: Specify the database name since it's not "(default)"
 export const db = getFirestore(app, 'yichat');
 export const storage = getStorage(app);
-export const functions = getFunctions(app);
+// Specify region to match Cloud Functions deployment (us-central1)
+export const functions = getFunctions(app, 'us-central1');
 
 // Firestore offline persistence is automatic in React Native
 // No need to enable it explicitly
