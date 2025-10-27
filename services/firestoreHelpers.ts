@@ -97,32 +97,3 @@ export const isOffline = (): boolean => {
   const status = useStore.getState().connectionStatus;
   return status === 'offline' || status === 'reconnecting';
 };
-
-/**
- * Skip Firestore operation if offline, otherwise execute it
- */
-export const skipIfOffline = async <T>(
-  operation: () => Promise<T>,
-  fallbackValue: T
-): Promise<T> => {
-  if (isOffline()) {
-    console.log('⏭️ Skipping Firestore operation - offline');
-    return fallbackValue;
-  }
-
-  try {
-    return await operation();
-  } catch (error: any) {
-    const isOfflineError =
-      error?.code === 'unavailable' ||
-      error?.message?.includes('offline') ||
-      error?.message?.includes('network');
-
-    if (isOfflineError) {
-      console.log('📡 Firestore operation failed - offline');
-      return fallbackValue;
-    }
-
-    throw error;
-  }
-};

@@ -248,7 +248,7 @@ export default function RootLayout() {
     } else {
       console.log('✅ Staying on current route');
     }
-  }, [isAuthenticated, segments, isLoading]);
+  }, [isAuthenticated, segments, isLoading, router]);
 
   // Show loading screen while checking auth state
   if (isLoading) {

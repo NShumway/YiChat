@@ -6,8 +6,8 @@ import { rateLimitMiddleware, incrementRateLimit } from './rateLimiting';
 // Initialize Firebase Admin
 admin.initializeApp();
 
-// Export new translation and embedding functions
-export { detectLanguage, translateWithTone, batchTranslate } from './translation';
+// Export translation and embedding functions
+export { detectLanguage, batchTranslate } from './translation';
 export {
   // scheduledBatchEmbedMessages, // NOTE: v1 scheduled functions have CPU config issues
   getEmbeddingStats,
@@ -26,117 +26,6 @@ export { autoAnalyzeAndTranslate, retryFailedTranslations } from './messageAnaly
 // API key will be set via: firebase functions:config:set openai.key="sk-..."
 const openai = new OpenAI({
   apiKey: functions.config().openai?.key || process.env.OPENAI_API_KEY,
-});
-
-/**
- * Cloud Function: Translate Message
- *
- * Translates a message from one language to another using GPT-4
- * Rate limited to prevent abuse
- *
- * @param data.text - Text to translate
- * @param data.sourceLang - Source language code (e.g., 'en', 'es')
- * @param data.targetLang - Target language code
- * @returns Translated text
- */
-export const translateMessage = functions.https.onCall(async (request) => {
-  // 1. Check authentication
-  if (!request.auth) {
-    throw new functions.https.HttpsError(
-      'unauthenticated',
-      'User must be logged in to translate messages'
-    );
-  }
-
-  // 2. Check rate limit FIRST (critical to prevent runaway costs)
-  await rateLimitMiddleware(request.auth.uid, 'translation');
-
-  // 3. Validate input
-  const { text, sourceLang, targetLang } = request.data;
-
-  if (!text || typeof text !== 'string') {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Text is required and must be a string'
-    );
-  }
-
-  if (!targetLang || typeof targetLang !== 'string') {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Target language is required'
-    );
-  }
-
-  // Don't translate if same language
-  if (sourceLang === targetLang) {
-    return { translatedText: text };
-  }
-
-  try {
-    console.log(
-      `🌐 Translating "${text.substring(0, 50)}..." from ${sourceLang} to ${targetLang}`
-    );
-    console.time('translation');
-
-    // 4. Call OpenAI API
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a professional translator. Translate the following text from ${sourceLang} to ${targetLang}.
-
-Rules:
-- Preserve the tone and style of the original
-- Keep proper nouns unchanged
-- Maintain any emoji or punctuation
-- Return ONLY the translation, no explanations`,
-        },
-        {
-          role: 'user',
-          content: text,
-        },
-      ],
-      temperature: 0.3, // Low temperature for consistent translations
-      max_tokens: 500,
-    });
-
-    const translatedText = response.choices[0]?.message?.content?.trim();
-
-    if (!translatedText) {
-      throw new Error('Empty translation received from OpenAI');
-    }
-
-    console.timeEnd('translation');
-    console.log(`✅ Translation complete: "${translatedText.substring(0, 50)}..."`);
-
-    // 5. Increment rate limit counter AFTER successful call
-    await incrementRateLimit(request.auth.uid, 'translation');
-
-    // 6. Return result
-    return {
-      translatedText,
-      sourceLang,
-      targetLang,
-      model: 'gpt-4-turbo',
-    };
-  } catch (error: any) {
-    console.error('❌ Translation error:', error);
-
-    // Don't expose internal errors to client
-    if (error.code === 'insufficient_quota') {
-      throw new functions.https.HttpsError(
-        'resource-exhausted',
-        'Translation service temporarily unavailable. Please try again later.'
-      );
-    }
-
-    throw new functions.https.HttpsError(
-      'internal',
-      'Translation failed. Please try again.'
-    );
-  }
 });
 
 /**
@@ -313,3 +202,4 @@ Keep your explanation concise (2-3 sentences max).`,
     );
   }
 });
+
