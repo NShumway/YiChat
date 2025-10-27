@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
 import { LanguagePicker } from '../../components/LanguagePicker';
@@ -8,34 +8,70 @@ import { useRouter } from 'expo-router';
 
 export default function SettingsScreen() {
   const user = useStore((state) => state.user);
+  const logout = useStore((state) => state.logout);
   const router = useRouter();
 
   const handleSignOut = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut(auth);
-              router.replace('/(auth)/login');
-            } catch (error) {
-              console.error('Error signing out:', error);
-              Alert.alert('Error', 'Failed to sign out');
-            }
+    console.log('🖱️ Log Out button clicked!');
+
+    // On web, use native confirm dialog. On mobile, use Alert.alert
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to log out?');
+      if (!confirmed) {
+        console.log('❌ Logout cancelled');
+        return;
+      }
+    } else {
+      // Mobile: use Alert.alert with buttons
+      Alert.alert(
+        'Log Out',
+        'Are you sure you want to log out?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Log Out',
+            style: 'destructive',
+            onPress: async () => {
+              await performLogout();
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+      return;
+    }
+
+    // Web: if confirmed, proceed with logout
+    await performLogout();
+  };
+
+  const performLogout = async () => {
+    try {
+      console.log('🔓 Logging out (confirmed)...');
+
+      // Sign out from Firebase (this triggers onAuthStateChanged)
+      await signOut(auth);
+      console.log('✅ Signed out from Firebase');
+
+      // Clear Zustand state
+      logout();
+      console.log('✅ Store cleared');
+
+      // Navigate to login
+      router.replace('/(auth)/login');
+      console.log('✅ Navigated to login');
+    } catch (error) {
+      console.error('❌ Error signing out:', error);
+      if (Platform.OS === 'web') {
+        alert('Failed to log out. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to log out');
+      }
+    }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* User Info Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -71,11 +107,23 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Sign Out Button */}
+        {/* Log Out Button */}
         <View style={styles.section}>
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [
+              styles.signOutButton,
+              pressed && styles.signOutButtonPressed
+            ]}
+            onPress={() => {
+              console.log('🖱️ Pressable onPress fired!');
+              handleSignOut();
+            }}
+            onPressIn={() => console.log('🖱️ Pressable onPressIn fired!')}
+            onPressOut={() => console.log('🖱️ Pressable onPressOut fired!')}
+            testID="logout-button"
+          >
+            <Text style={styles.signOutText}>Log Out</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -89,6 +137,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
   section: {
     marginTop: 20,
@@ -166,7 +217,13 @@ const styles = StyleSheet.create({
       android: {
         elevation: 2,
       },
+      web: {
+        cursor: 'pointer',
+      },
     }),
+  },
+  signOutButtonPressed: {
+    opacity: 0.8,
   },
   signOutText: {
     color: '#fff',

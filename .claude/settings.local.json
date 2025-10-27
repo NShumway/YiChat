@@ -19,7 +19,16 @@
       "Bash(curl:*)",
       "Bash(firebase functions:list:*)",
       "Bash(ls:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npm test)",
+      "Bash(npm test:*)",
+      "Bash(git restore:*)",
+      "Bash(href)",
+      "Bash(push)",
+      "Bash(replace)",
+      "Bash(firebase functions:log:*)",
+      "Bash(cat:*)",
+      "Bash(firebase apps:list:*)"
     ],
     "deny": [],
     "ask": []

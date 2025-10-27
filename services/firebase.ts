@@ -32,20 +32,23 @@ const firebaseConfig = {
 // Validate Firebase config
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   console.error('❌ Firebase configuration is missing! Check your .env.local file.');
+  console.error('Missing values:', {
+    apiKey: firebaseConfig.apiKey ? 'present' : 'MISSING',
+    projectId: firebaseConfig.projectId ? 'present' : 'MISSING',
+    appId: firebaseConfig.appId ? 'present' : 'MISSING',
+  });
+  console.error('Platform:', Platform.OS);
+  console.error('Constants.expoConfig?.extra:', Constants.expoConfig?.extra);
   throw new Error('Firebase configuration is incomplete');
 }
 
 console.log('🔥 Initializing Firebase...');
 console.log('Platform:', Platform.OS);
 console.log('Project ID:', firebaseConfig.projectId);
-console.log('API Key (first 10 chars):', firebaseConfig.apiKey?.substring(0, 10));
-console.log('App ID:', firebaseConfig.appId);
-console.log('Full config:', JSON.stringify(firebaseConfig, null, 2));
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 console.log('Firebase app name:', app.name);
-console.log('Firebase app options:', JSON.stringify(app.options, null, 2));
 
 // Initialize Firebase Auth with platform-specific persistence
 export const auth = Platform.OS === 'web' 

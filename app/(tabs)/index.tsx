@@ -2,9 +2,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { signOut } from 'firebase/auth';
-import { doc, updateDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { auth, db } from '../../services/firebase';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { useStore } from '../../store/useStore';
 import { Chat } from '../../types/Message';
 import { ChatListItem } from '../../components/ChatListItem';
@@ -13,7 +12,7 @@ import { updateBadgeFromChats } from '../../services/notifications';
 
 export default function ChatsScreen() {
   const router = useRouter();
-  const { user, logout, connectionStatus } = useStore();
+  const { user, connectionStatus } = useStore();
   const [chats, setChats] = useState<Chat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -69,46 +68,6 @@ export default function ChatsScreen() {
   const handleNewGroup = () => {
     console.log('👥 Navigating to new-group');
     router.push('/new-group' as any);
-  };
-
-  const handleLogout = async () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Update user status to offline
-              if (user) {
-                await updateDoc(doc(db, 'users', user.uid), {
-                  status: 'offline',
-                  lastSeen: new Date(),
-                });
-              }
-
-              // Sign out from Firebase
-              await signOut(auth);
-              
-              // Clear Zustand state
-              logout();
-              
-              // Navigate to login
-              router.replace('/(auth)/login');
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to log out. Please try again.');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const getLanguageEmoji = (code: string) => {
@@ -203,13 +162,6 @@ export default function ChatsScreen() {
         )}
       </View>
 
-      {/* Logout Button */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogout}
-      >
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -377,21 +329,6 @@ const styles = StyleSheet.create({
   },
   fabSecondaryText: {
     fontSize: 24,
-  },
-  logoutButton: {
-    margin: 20,
-    height: 48,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FF3B30',
-  },
-  logoutText: {
-    color: '#FF3B30',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 
