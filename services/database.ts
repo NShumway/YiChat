@@ -42,6 +42,7 @@ export const initDatabase = () => {
         text TEXT NOT NULL,
         originalLanguage TEXT,
         translations TEXT,
+        aiInsights TEXT,
         tone TEXT,
         timestamp INTEGER NOT NULL,
         status TEXT DEFAULT 'sending',
@@ -69,6 +70,11 @@ export const initDatabase = () => {
       if (!columnNames.includes('translations')) {
         console.log('📦 Migrating: Adding translations column');
         database.execSync(`ALTER TABLE messages ADD COLUMN translations TEXT;`);
+      }
+
+      if (!columnNames.includes('aiInsights')) {
+        console.log('📦 Migrating: Adding aiInsights column');
+        database.execSync(`ALTER TABLE messages ADD COLUMN aiInsights TEXT;`);
       }
 
       if (!columnNames.includes('tone')) {
@@ -134,7 +140,7 @@ export const dbOperations = {
     const database = getDatabase();
     if (!database) return;
     database.runSync(
-      'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         message.id,
         message.chatId,
@@ -142,6 +148,7 @@ export const dbOperations = {
         message.text,
         message.originalLanguage || null,
         message.translations ? JSON.stringify(message.translations) : null,
+        message.aiInsights ? JSON.stringify(message.aiInsights) : null,
         message.tone || null,
         message.timestamp,
         message.status,
@@ -174,6 +181,7 @@ export const dbOperations = {
       text: row.text,
       originalLanguage: row.originalLanguage || undefined,
       translations: row.translations ? JSON.parse(row.translations) : undefined,
+      aiInsights: row.aiInsights ? JSON.parse(row.aiInsights) : undefined,
       tone: row.tone || undefined,
       timestamp: row.timestamp,
       status: row.status,
@@ -380,6 +388,7 @@ export const dbOperations = {
       text: row.text,
       originalLanguage: row.originalLanguage || undefined,
       translations: row.translations ? JSON.parse(row.translations) : undefined,
+      aiInsights: row.aiInsights ? JSON.parse(row.aiInsights) : undefined,
       tone: row.tone || undefined,
       timestamp: row.timestamp,
       status: row.status,

@@ -35,6 +35,7 @@ import { useStore } from '../../store/useStore';
 import { Message } from '../../types/Message';
 import { MessageBubble } from '../../components/MessageBubble';
 import { ConnectionBanner } from '../../components/ConnectionBanner';
+import { AIChatModal } from '../../components/AIChatModal';
 import { safeGetDoc } from '../../services/firestoreHelpers';
 import { subscribeToUserPresence } from '../../services/presence';
 
@@ -51,6 +52,9 @@ export default function ChatScreen() {
   const [chatData, setChatData] = useState<any>(null);
   const [otherUserName, setOtherUserName] = useState<string>('');
   const [otherUserStatus, setOtherUserStatus] = useState<'online' | 'offline'>('offline');
+  const [aiChatVisible, setAIChatVisible] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [senderNationalities, setSenderNationalities] = useState<{ [userId: string]: string }>({});
   const flashListRef = useRef<FlashList<Message>>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const currentScrollOffset = useRef<number>(0);
@@ -143,6 +147,35 @@ export default function ChatScreen() {
     setMessages(localMessages);
   }, [chatId]);
 
+  // Fetch sender nationalities for AI context
+  useEffect(() => {
+    if (!chatId || messages.length === 0) return;
+
+    const fetchNationalities = async () => {
+      const senderIds = [...new Set(messages.map(m => m.senderId))];
+      const nationalities: { [userId: string]: string } = {};
+
+      for (const senderId of senderIds) {
+        if (senderNationalities[senderId]) continue; // Already fetched
+
+        try {
+          const { data, exists } = await safeGetDoc<any>(doc(db, 'users', senderId));
+          if (exists && data) {
+            nationalities[senderId] = data.nationality || 'Unknown';
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch nationality for ${senderId}:`, error);
+        }
+      }
+
+      if (Object.keys(nationalities).length > 0) {
+        setSenderNationalities(prev => ({ ...prev, ...nationalities }));
+      }
+    };
+
+    fetchNationalities();
+  }, [messages, chatId]);
+
   // Then sync with Firestore (real-time updates)
   useEffect(() => {
     if (!chatId) return;
@@ -214,6 +247,12 @@ export default function ChatScreen() {
     };
   }, [chatId]);
 
+  // Handler for opening AI chat
+  const handleAIChat = useCallback((message: Message) => {
+    setSelectedMessage(message);
+    setAIChatVisible(true);
+  }, []);
+
   // Memoized render function for performance
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
@@ -223,10 +262,11 @@ export default function ChatScreen() {
           isOwn={item.senderId === user?.uid}
           isGroupChat={chatData?.type === 'group'}
           chatParticipants={chatData?.participants}
+          onAIChat={handleAIChat}
         />
       );
     },
-    [user?.uid, chatData?.type, chatData?.participants]
+    [user?.uid, chatData?.type, chatData?.participants, handleAIChat]
   );
 
   // Memoized keyExtractor
@@ -634,6 +674,19 @@ export default function ChatScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* AI Chat Modal */}
+      {selectedMessage && (
+        <AIChatModal
+          visible={aiChatVisible}
+          onClose={() => {
+            setAIChatVisible(false);
+            setSelectedMessage(null);
+          }}
+          message={selectedMessage}
+          senderNationality={senderNationalities[selectedMessage.senderId]}
+        />
+      )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
